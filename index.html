@@ -1,1434 +1,762 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  LayoutDashboard, Siren, Stethoscope, ClipboardList,
-  LogIn, LogOut, ArrowLeft, ExternalLink, CheckCircle2,
-  AlertTriangle, XCircle, Activity, UserCircle, Users,
-  Trash2, Edit, ChevronRight, BarChart3, PackagePlus,
-  Building, KeyRound, ShieldCheck, FileSpreadsheet,
-  FileDown, Info, X, Zap, Home, AlertOctagon, Filter,
-  MessageSquare, Send, Loader2, Bot, Sparkles, ChevronDown
-} from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, User } from 'firebase/auth';
-import {
-  getFirestore, doc, collection, query, onSnapshot,
-  addDoc, updateDoc, deleteDoc, getDocs, setDoc,
-  Timestamp, writeBatch, setLogLevel, where
-} from 'firebase/firestore';
-
-// =======================================================
-// >>> MODE LOKAL <<<
-// Atur ini ke TRUE untuk memaksa aplikasi menggunakan data MOCK lokal
-// dan menonaktifkan semua koneksi ke Firebase (termasuk penyimpanan).
-const USE_LOCAL_MOCK_MODE = true; 
-// =======================================================
-
-// --- FUNGSI BANTU FIREBASE GLOBAL & KONFIGURASI ---
-// Ketika berjalan lokal, variabel ini akan menjadi undefined, sehingga kita set default
-const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-// FIX: Replace slashes/dots in AppId so it acts as ONE segment path part for Firestore
-const safeAppId = rawAppId.replace(/\//g, '_').replace(/\./g, '-'); 
-// Menggunakan objek kosong jika config tidak ada, ini memicu Local Mock Mode.
-const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : {}; 
-
-// Firestore path constants
-// Ini akan menjadi 4 segmen: artifacts / safeAppId / public / data
-const BASE_PATH_SEGMENTS = ['artifacts', safeAppId, 'public', 'data'];
-
-const ROOMS_COLLECTION = 'rooms';
-const INVENTORY_COLLECTION = 'inventory';
-const REPORTS_COLLECTION = 'reports';
-
-// --- FUNGSI BANTU TANGGAL (MEMPERBAIKI MASALAH ZONA WAKTU) ---
-const getLocalDate = (iso = false) => {
-  const offset = new Date().getTimezoneOffset() * 60000;
-  const date = new Date(Date.now() - offset);
-  if (iso) return date.toISOString();
-  return date.toISOString().slice(0, 10);
-};
-
-// --- GAYA CSS COLORFUL & MODERN ---
-const COLORFUL_THEME = `
-  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
-  
-  body { 
-    font-family: 'Nunito', sans-serif; 
-    background-color: #f0f9ff; 
-    color: #1e293b;
-    overflow: hidden; 
-  }
-
-  /* --- LATAR BELAKANG DASAR --- */
-  .colorful-bg {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 50%, #f3e8ff 100%);
-    z-index: -2;
-  }
-  
-  .colorful-bg::before {
-    content: '';
-    position: absolute;
-    top: -10%; right: -10%;
-    width: 50vw; height: 50vw;
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
-    border-radius: 50%;
-    animation: float 10s infinite alternate;
-  }
-  .colorful-bg::after {
-    content: '';
-    position: absolute;
-    bottom: -10%; left: -10%;
-    width: 40vw; height: 40vw;
-    background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
-    border-radius: 50%;
-    animation: float 12s infinite alternate-reverse;
-  }
-
-  @keyframes float {
-    0% { transform: translate(0, 0); }
-    100% { transform: translate(20px, 20px); }
-  }
-
-  /* --- KARTU --- */
-  .modern-card, .card-white {
-    background: #ffffff;
-    border-radius: 20px;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
-    border: 1px solid rgba(255, 255, 255, 0.8);
-  }
-  .card-base {
-    border-radius: 20px;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-  }
-
-  /* --- TOMBOL --- */
-  .btn-menu {
-    transition: all 0.2s;
-    border: none;
-    position: relative;
-    overflow: hidden;
-  }
-  .btn-menu:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  }
-  
-  .btn-blue { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
-  .btn-violet { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; }
-  .btn-emerald { background: linear-gradient(135deg, #10b981, #059669); color: white; }
-  .btn-orange { background: linear-gradient(135deg, #f97316, #ea580c); color: white; }
-  .btn-slate { background: linear-gradient(135deg, #64748b, #475569); color: white; }
-  .btn-slate:hover { background: linear-gradient(135deg, #475569, #334155); }
-  
-  .btn-ghost {
-    background: #f1f5f9;
-    color: #64748b;
-  }
-  .btn-ghost:hover {
-    background: #e2e8f0;
-    color: #334155;
-  }
-
-  /* --- TABEL (DENGAN WARNA SELANG SELING) --- */
-  .color-table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 16px; }
-  .color-table th { 
-    background: #059669; /* HIJAU KESEHATAN (Emerald 600) */
-    color: #ffffff;
-    font-weight: 800;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    padding: 16px;
-    text-align: left;
-    letter-spacing: 0.05em;
-  }
-  .color-table td { 
-    padding: 14px 16px;
-    color: #334155;
-    font-weight: 600;
-    border-bottom: 1px solid #e2e8f0;
-  }
-  
-  /* WARNA SELANG SELING (ZEBRA STRIPING) */
-  .color-table tbody tr:nth-child(odd) td { background-color: #ffffff; }
-  .color-table tbody tr:nth-child(even) td { background-color: #ecfdf5; }
-
-  /* EFEK HOVER */
-  .color-table tr:hover td { 
-    background-color: #d1fae5 !important; 
-    cursor: default;
-  }
-  .color-table tr:last-child td { border-bottom: none; }
-
-  /* --- INPUTS --- */
-  .modern-input {
-    background: #f8fafc;
-    border: 2px solid #e2e8f0;
-    transition: all 0.2s;
-    color: #0f172a;
-  }
-  .modern-input:focus {
-    background: #fff;
-    border-color: #3b82f6; 
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
-    outline: none;
-  }
-  
-  /* --- TRANSPARENT INPUT (UNTUK KARTU BERWARNA PENUH) --- */
-  .glass-input {
-    background: rgba(255, 255, 255, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    color: white;
-    transition: all 0.2s;
-  }
-  .glass-input::placeholder { color: rgba(255, 255, 255, 0.7); }
-  .glass-input:focus {
-    background: rgba(255, 255, 255, 0.3);
-    border-color: white;
-    outline: none;
-    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.1);
-  }
-  /* Memperbaiki Warna Opsi Select pada Input Kaca */
-  .glass-input option { color: #334155; background: white; }
-
-  /* --- ANIMASI MODAL --- */
-  .modal-overlay { animation: fadeIn 0.2s ease-out; }
-  .modal-content { animation: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-  
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes scaleUp { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-
-  /* --- SCROLLBAR --- */
-  ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
-`;
-
-// --- DATA AWAL (MOCK DATA) ---
-// Data ini digunakan jika berjalan di Local Mock Mode
-const INITIAL_ROOMS_MOCK = [
-  { id: 'mock1', name: "IGD", password: "123" },
-  { id: 'mock2', name: "ICU", password: "123" },
-  { id: 'mock3', name: "Mawar", password: "123" },
-  { id: 'mock4', name: "Anggrek", password: "123" },
-];
-
-const INITIAL_INVENTORY_MOCK = [
-  { id: 1, name: "Patient Monitor", merk: "Philips", tahun: "2021", jumlah: 5, baik: 3, rusakRingan: 1, rusakBerat: 1, room: "ICU", nextKalibrasi: "2023-12-01" },
-  { id: 2, name: "Infus Pump", merk: "Terumo", tahun: "2020", jumlah: 2, baik: 0, rusakRingan: 0, rusakBerat: 2, room: "IGD", nextKalibrasi: "2024-12-01" },
-  { id: 3, name: "USG 4D", merk: "GE", tahun: "2022", jumlah: 1, baik: 1, rusakRingan: 0, rusakBerat: 0, room: "ICU", nextKalibrasi: "2025-05-20" },
-];
-
-const INITIAL_REPORTS_MOCK = [
-  { id: 101, room: "ICU", date: getLocalDate(), bpjs: 5, umum: 2, total: 7 }
-];
-
-// --- FUNGSI BANTU PDF ---
-const loadScript = (src) => {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) return resolve();
-    const script = document.createElement('script');
-    script.src = src;
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-};
-
-const ensurePdfLibraries = async () => {
-  try {
-    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
-    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js");
-    return true;
-  } catch (e) { console.error("PDF Lib Error", e); return false; }
-};
-
-// --- DATA MENU KMKP ---
-const KMKP_ITEMS = [
-    { name: "INDIKATOR MUTU", icon: BarChart3, link: "https://biolink.info/muturslebong" }, 
-    { name: "SIMMUTU", icon: Users, link: "https://172.31.1.2/simmutu/" },
-    { name: "SURVEY KEPUASAN", icon: FileSpreadsheet, link: "https://rsudlebong.fillout.com/skm" },
-    { name: "FORMULIR PENGADUAN", icon: AlertTriangle, link: "https://rsudlebong.fillout.com/pengaduan" }, 
-    { name: "SURVEY BUDAYA & KESELAMATAN", icon: ShieldCheck, link: "https://rsudlebong.fillout.com/surveibudaya" },
-];
-
-const PASTEL_COLORS = [
-    "bg-blue-100 text-blue-700 hover:bg-blue-200",
-    "bg-indigo-100 text-indigo-700 hover:bg-indigo-200",
-    "bg-emerald-100 text-emerald-700 hover:bg-emerald-200",
-    "bg-rose-100 text-rose-700 hover:bg-rose-200",
-    "bg-violet-100 text-violet-700 hover:bg-violet-200"
-];
-
-// --- KOMPONEN MODAL KONFIRMASI ---
-const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, type = 'danger' }) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 modal-overlay">
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm relative z-10 modal-content overflow-hidden transform transition-all">
-        <div className={`p-6 text-center ${type === 'danger' ? 'bg-rose-50' : 'bg-slate-50'}`}>
-          <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 shadow-sm ${type === 'danger' ? 'bg-rose-100 text-rose-500' : 'bg-slate-200 text-slate-600'}`}>
-            {type === 'danger' ? <Trash2 size={32} /> : <AlertOctagon size={32} />}
-          </div>
-          <h3 className={`text-xl font-black ${type === 'danger' ? 'text-rose-600' : 'text-slate-800'}`}>{title}</h3>
-        </div>
-        <div className="p-6 text-center">
-          <p className="text-slate-600 font-medium mb-8 leading-relaxed">{message}</p>
-          <div className="flex gap-3">
-            <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
-              Batal
-            </button>
-            <button onClick={onConfirm} className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg transition-transform active:scale-95 ${type === 'danger' ? 'bg-gradient-to-r from-rose-500 to-red-600 shadow-rose-200' : 'bg-slate-700'}`}>
-              Ya, Lanjutkan
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// --- KOMPONEN TOAST NOTIFICATION (PENGGANTI ALERT()) ---
-const ToastNotification = ({ toast, setToast }) => {
-    if (!toast.show) return null;
-
-    let icon, color;
-    switch (toast.type) {
-        case 'success':
-            icon = <CheckCircle2 size={20} />;
-            color = 'bg-emerald-500';
-            break;
-        case 'error':
-            icon = <XCircle size={20} />;
-            color = 'bg-rose-500';
-            break;
-        case 'warning':
-            icon = <AlertTriangle size={20} />;
-            color = 'bg-amber-500';
-            break;
-        default:
-            icon = <Info size={20} />;
-            color = 'bg-blue-500';
-            break;
-    }
-
-    return (
-        <div className="fixed top-5 right-5 z-[10000] p-4">
-            <div className={`flex items-center gap-3 p-4 rounded-xl text-white shadow-xl ${color} transition-all duration-300 transform translate-y-0 opacity-100`} style={{ animation: 'toastIn 0.3s forwards' }}>
-                {icon}
-                <p className="font-semibold text-sm">{toast.message}</p>
-                <button onClick={() => setToast(prev => ({ ...prev, show: false }))} className="p-1 rounded-full hover:bg-white/20">
-                    <X size={16} />
-                </button>
-            </div>
-            <style jsx="true">{`
-                @keyframes toastIn {
-                    from { transform: translateY(-20px); opacity: 0; }
-                    to { transform: translateY(0); opacity: 1; }
-                }
-            `}</style>
-        </div>
-    );
-};
-
-// 1. SIDEBAR
-const Sidebar = ({ activeView, onViewChange, user, onLogout }) => {
-  const [isKMKPOpen, setIsKMKPOpen] = useState(false);
-
-  return (
-    <div className="hidden md:flex w-72 flex-col h-full bg-white border-r border-slate-200 flex-shrink-0 z-20 shadow-lg">
-      <div className="p-6 flex flex-col h-full">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-            <Activity size={26} strokeWidth={3} />
-          </div>
-          <div>
-            <h1 className="font-extrabold text-lg leading-tight text-slate-800 tracking-tight">PORTAL<br/><span className="text-blue-600">RSUD LEBONG</span></h1>
-          </div>
-        </div>
-
-        <div className="space-y-3 flex-1 overflow-y-auto pr-1 pb-4">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">Menu Utama</div>
-            
-            <button onClick={() => onViewChange('dashboard')} className={`w-full flex items-center gap-3 p-3.5 rounded-xl font-bold text-sm btn-menu ${activeView === 'dashboard' ? 'btn-blue shadow-lg shadow-blue-500/30' : 'btn-ghost'}`}>
-              <LayoutDashboard size={20} />
-              <span>Dashboard</span>
-            </button>
-            
-            {/* MENU KMKP */}
-            <div className="space-y-1">
-              <button 
-                onClick={() => setIsKMKPOpen(!isKMKPOpen)} 
-                className={`w-full flex items-center gap-3 p-3.5 rounded-xl font-bold text-sm btn-menu btn-emerald text-white shadow-lg shadow-emerald-500/30 transition-all`}
-              >
-                <ClipboardList size={20} />
-                <span>KMKP</span>
-                <ChevronRight size={16} className={`ml-auto opacity-80 transition-transform duration-300 ${isKMKPOpen ? 'rotate-90' : ''}`}/>
-              </button>
-
-              {/* Animasi Dropdown */}
-              <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isKMKPOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
-                  <div className="pl-3 space-y-2 pt-2">
-                    {KMKP_ITEMS.map((item, idx) => (
-                        <button 
-                            key={idx}
-                            onClick={() => window.open(item.link, "_blank")}
-                            className={`w-full flex items-center gap-3 p-3 rounded-xl text-[11px] font-bold transition-all shadow-sm group btn-menu ${PASTEL_COLORS[idx % PASTEL_COLORS.length]}`}
-                        >
-                            <div className="w-8 h-8 rounded-lg bg-white/40 flex items-center justify-center">
-                                <item.icon size={16} />
-                            </div>
-                            <span className="leading-tight">{item.name}</span>
-                        </button>
-                    ))}
-                  </div>
-              </div>
-            </div>
-
-            {!user && (
-              <button onClick={() => onViewChange('login')} className={`w-full flex items-center gap-3 p-3.5 rounded-xl font-bold text-sm btn-menu ${activeView === 'login' ? 'btn-violet shadow-lg shadow-violet-500/30' : 'btn-ghost'}`}>
-                 <LogIn size={20} />
-                 <span>Login Petugas</span>
-              </button>
-            )}
-        </div>
-
-        {user && (
-          <div className="mt-auto pt-6 border-t border-slate-100">
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                 <div className="flex items-center gap-3 mb-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-md ${user.role==='admin' ? 'bg-gradient-to-r from-violet-500 to-indigo-500' : 'bg-gradient-to-r from-emerald-400 to-teal-400'}`}>
-                        {user.name.charAt(0)}
-                    </div>
-                    <div className="overflow-hidden">
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">Halo,</p>
-                        <p className="text-sm font-black text-slate-800 truncate w-24">{user.name}</p>
-                    </div>
-                 </div>
-                 <div className="grid gap-2">
-                    <button onClick={() => onViewChange('room_panel')} className="w-full py-2 bg-white rounded-xl text-xs font-bold text-violet-600 shadow-sm border border-violet-100 hover:bg-violet-50 flex items-center justify-center gap-2"><Edit size={12}/> Input Data</button>
-                    <button onClick={onLogout} className="w-full py-2 bg-slate-100 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-200 flex items-center justify-center gap-2"><LogOut size={12}/> Keluar</button>
-                 </div>
-              </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// 2. NAVIGASI MOBILE
-const MobileNav = ({ activeView, onViewChange, user }) => {
-  const [showKMKPMenu, setShowKMKPMenu] = useState(false);
-
-  return (
-    <>
-      <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around px-4 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-        <button onClick={() => { setShowKMKPMenu(false); onViewChange('dashboard'); }} className={`flex flex-col items-center gap-1 ${activeView==='dashboard' ? 'text-blue-600' : 'text-slate-400'}`}>
-            <LayoutDashboard size={24}/>
-            <span className="text-[9px] font-bold">Dash</span>
-        </button>
-        
-        {/* TOMBOL KMKP - MEMBUKA MENU */}
-        <button onClick={() => setShowKMKPMenu(!showKMKPMenu)} className="flex flex-col items-center gap-1 text-emerald-500 relative -top-5">
-            <div className={`p-3 rounded-full shadow-lg transition-transform ${showKMKPMenu ? 'bg-white text-emerald-500 rotate-180' : 'bg-emerald-500 text-white shadow-emerald-200'}`}>
-              {showKMKPMenu ? <X size={24}/> : <ClipboardList size={24}/>}
-            </div>
-            {/* LABEL TEKS KMKP */}
-            <span className="text-[10px] font-bold text-slate-500 absolute -bottom-5">KMKP</span>
-        </button>
-
-        <button onClick={() => { setShowKMKPMenu(false); onViewChange(user ? 'room_panel' : 'login'); }} className={`flex flex-col items-center gap-1 ${['login','room_panel'].includes(activeView) ? 'text-violet-600' : 'text-slate-400'}`}>
-            {user ? <UserCircle size={24}/> : <LogIn size={24}/>}
-            <span className="text-[9px] font-bold">{user ? 'Panel' : 'Login'}</span>
-        </button>
-      </div>
-
-      {/* POPUP MENU KMKP UNTUK MOBILE */}
-      {showKMKPMenu && (
-           <div className="fixed inset-0 z-30 bg-slate-900/60 backdrop-blur-sm md:hidden flex flex-col justify-end pb-24 fade-up" onClick={() => setShowKMKPMenu(false)}>
-             <div className="bg-white rounded-t-3xl p-6 shadow-2xl mx-4 mb-4 rounded-b-3xl" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
-                  <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
-                     <ClipboardList size={20}/>
-                  </div>
-                  <div>
-                     <h3 className="font-bold text-slate-800">Menu KMKP</h3>
-                     <p className="text-xs text-slate-500">Pilih layanan yang tersedia</p>
-                  </div>
-                </div>
-                <div className="grid gap-3 max-h-[60vh] overflow-y-auto">
-                    {KMKP_ITEMS.map((item, idx) => (
-                       <button 
-                            key={idx}
-                            onClick={() => window.open(item.link, "_blank")}
-                            className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold text-sm shadow-sm btn-menu text-left ${PASTEL_COLORS[idx % PASTEL_COLORS.length]}`}
-                        >
-                          <div className="w-8 h-8 rounded-lg bg-white/40 flex items-center justify-center text-white/90">
-                              <item.icon size={18}/>
-                            </div>
-                            {item.name}
-                            <ExternalLink size={16} className="ml-auto opacity-50"/>
-                       </button>
-                    ))}
-                </div>
-             </div>
-           </div>
-      )}
-    </>
-  );
-};
-
-// 3. TAMPILAN DASHBOARD
-const Dashboard = ({ reports, inventory, rooms }) => {
-  const today = getLocalDate(); // Menggunakan fungsi bantu tanggal
-  const [showAssetDetail, setShowAssetDetail] = useState(false);
-
-  // Data perhitungan
-  const todaysReports = reports.filter(r => r.date === today);
-  const reportedRoomNames = todaysReports.map(r => r.room);
-  const missingRooms = rooms.filter(r => !reportedRoomNames.includes(r.name)).map(r => r.name);
-  
-  const damagedItems = inventory.filter(i => (parseInt(i.rusakRingan) > 0 || parseInt(i.rusakBerat) > 0));
-  // Membandingkan tanggal kalibrasi dengan tanggal hari ini
-  const calibrationItems = inventory.filter(i => i.nextKalibrasi && new Date(i.nextKalibrasi) < new Date(today));
-  
-  const totalPasien = todaysReports.reduce((acc, curr) => acc + (parseInt(curr.total) || 0), 0);
-  
-  return (
-    <div className="p-6 lg:p-10 pb-24 h-full overflow-y-auto">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Sistem Online</span>
-            </div>
-            <h1 className="text-3xl font-black text-slate-800">Dashboard <span className="text-blue-600">Utama</span></h1>
-            <p className="text-slate-500 font-medium">Monitoring aktivitas RSUD Lebong.</p>
-          </div>
-          <div className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
-            <span className="text-xs font-bold text-slate-400 uppercase block">Tanggal</span>
-            <span className="font-bold text-slate-700">{new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {/* Kartu 1: Ruangan Belum Lapor */}
-          <div className="rounded-[20px] p-6 relative overflow-hidden group bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-lg shadow-rose-200">
-            <div className="absolute right-0 top-0 opacity-10 transform scale-150"><Siren size={100}/></div>
-            <div className="relative z-10">
-              <div className="flex justify-between items-start mb-4">
-                <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm"><Siren size={24}/></div>
-                <span className="text-xs font-bold bg-white/20 px-2 py-1 rounded-lg">Belum Lapor</span>
-              </div>
-              <h3 className="text-4xl font-black mb-1">{missingRooms.length}</h3>
-              <p className="text-sm font-bold opacity-90">Ruangan</p>
-              {missingRooms.length > 0 && <div className="mt-4 flex flex-wrap gap-1">
-                {missingRooms.slice(0,3).map(r => <span key={r} className="text-[10px] bg-white text-rose-600 px-2 py-1 rounded font-bold">{r}</span>)}
-              </div>}
-            </div>
-          </div>
-
-          {/* Kartu 2: Unit Bermasalah */}
-          <div className="rounded-[20px] p-6 relative overflow-hidden bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-orange-200">
-            <div className="absolute right-0 top-0 opacity-10 transform scale-150"><AlertTriangle size={100}/></div>
-            <div className="relative z-10">
-              <div className="flex justify-between items-start mb-4">
-                <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm"><AlertTriangle size={24}/></div>
-                <span className="text-xs font-bold bg-white/20 px-2 py-1 rounded-lg">Perlu Perhatian</span>
-              </div>
-              <h3 className="text-4xl font-black mb-1">{damagedItems.length + calibrationItems.length}</h3>
-              <p className="text-sm font-bold opacity-90">Unit Bermasalah</p>
-              {(damagedItems.length > 0 || calibrationItems.length > 0) && (
-                  <button onClick={() => setShowAssetDetail(true)} className="mt-4 w-full py-2 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold transition-colors">Lihat Detail</button>
-              )}
-            </div>
-          </div>
-
-          {/* Kartu 3: Total Pasien Hari Ini */}
-          <div className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-[20px] p-6 shadow-xl shadow-blue-200 relative overflow-hidden">
-            <div className="absolute right-0 top-0 opacity-10"><Users size={120}/></div>
-            <div className="relative z-10">
-              <div className="p-2 bg-white/20 w-fit rounded-lg mb-4 backdrop-blur-sm"><Activity size={24} color="white"/></div>
-              <h3 className="text-4xl font-black mb-1">{totalPasien}</h3>
-              <p className="text-sm font-bold opacity-90">Total Pasien Hari Ini</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Tabel Kunjungan Pasien */}
-        <div className="modern-card overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
-            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope className="text-blue-500"/> Kunjungan Pasien Hari Ini</h3>
-            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-xs font-bold">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span> Live
-            </div>
-          </div>
-          <div className="overflow-x-auto p-4 bg-white">
-            <table className="color-table">
-              <thead>
-                <tr>
-                  <th>Ruangan</th>
-                  <th className="text-center">Total</th>
-                  <th className="text-center">BPJS</th>
-                  <th className="text-center">Umum</th>
-                  <th className="text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rooms.map(roomData => {
-                  const r = roomData.name;
-                  const rep = todaysReports.find(x => x.room === r);
-                  return (
-                      <tr key={r}>
-                        <td><div className="font-bold text-slate-700">{r}</div></td>
-                        <td className="text-center">{rep ? <span className="font-black text-lg text-slate-800">{rep.total}</span> : <span className="text-slate-300">-</span>}</td>
-                        <td className="text-center font-bold text-emerald-600">{rep ? rep.bpjs : "-"}</td>
-                        <td className="text-center font-bold text-indigo-600">{rep ? rep.umum : "-"}</td>
-                        <td className="text-center">
-                           {rep ? 
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700"><CheckCircle2 size={12}/> Masuk</span> : 
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-600"><XCircle size={12}/> Pending</span>
-                           }
-                        </td>
-                      </tr>
-                  )
-                }).sort((a,b) => (a.props.children[4].props.children.props.className.includes('Pending') ? 1 : -1))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Modal Detail Aset Bermasalah */}
-        {showAssetDetail && (
-          <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[80vh] overflow-hidden transform transition-all scale-100">
-                <div className="p-5 border-b border-orange-100 flex justify-between items-center bg-gradient-to-r from-amber-500 to-orange-500 rounded-t-2xl">
-                    <h3 className="font-bold text-white text-lg flex items-center gap-2"><AlertTriangle className="text-white"/> Unit Bermasalah</h3>
-                    <button onClick={() => setShowAssetDetail(false)} className="p-2 hover:bg-white/20 rounded-full text-white"><X size={20}/></button>
-                </div>
-                <div className="p-5 overflow-y-auto space-y-4">
-                    {damagedItems.length > 0 && (
-                        <div>
-                            <h4 className="font-bold text-slate-500 mb-2 text-xs uppercase tracking-wider">Rusak</h4>
-                            {damagedItems.map(item => (
-                                <div key={item.id} className="flex justify-between items-center p-3 bg-white border border-slate-200 rounded-xl shadow-sm mb-2">
-                                    <div>
-                                        <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                                        <p className="text-xs text-slate-400">{item.room}</p>
-                                    </div>
-                                    <div className="flex gap-1">
-                                        {parseInt(item.rusakRingan) > 0 && <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-1 rounded-lg font-bold">RR: {item.rusakRingan}</span>}
-                                        {parseInt(item.rusakBerat) > 0 && <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-1 rounded-lg font-bold">RB: {item.rusakBerat}</span>}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    {calibrationItems.length > 0 && (
-                        <div>
-                            <h4 className="font-bold text-orange-500 mb-2 text-xs uppercase tracking-wider">Jadwal Kalibrasi (Sudah Lewat)</h4>
-                            {calibrationItems.map(item => (
-                                <div key={item.id} className="flex justify-between items-center p-3 bg-white border border-orange-100 rounded-xl shadow-sm mb-2">
-                                    <div>
-                                        <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                                        <p className="text-xs text-slate-400">{item.room}</p>
-                                    </div>
-                                    <span className="text-[10px] bg-orange-50 text-orange-700 px-2 py-1 rounded-lg font-bold">{item.nextKalibrasi}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-              </div>
-          </div>
-        )}
-    </div>
-  );
-};
-
-// 4. TAMPILAN LOGIN
-const LoginView = ({ onLogin, rooms, showToast }) => {
-    const [activeTab, setActiveTab] = useState('room');
-    const [room, setRoom] = useState(rooms[0]?.name || '');
-    const [pass, setPass] = useState('');
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        if(activeTab === 'admin') {
-            if(pass === 'admin123') { // Gunakan password admin yang lebih kuat
-                onLogin('Super Admin', 'admin');
-            } else {
-                showToast("Password Admin Salah!", 'error');
-            }
-        } else {
-            const target = rooms.find(r => r.name === room);
-            if(target && target.password === pass) {
-                onLogin(room, 'room');
-            } else {
-                showToast("Password Ruangan Salah!", 'error');
-            }
-        }
-    };
-
-    return (
-      <div className="h-full flex items-center justify-center p-4">
-          <div className="w-full max-w-md p-8 rounded-[2rem] shadow-2xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 border border-white/20">
-            <div className="text-center mb-8">
-               <div className="w-16 h-16 bg-white/20 rounded-full mx-auto flex items-center justify-center text-white mb-4 backdrop-blur-sm border border-white/20">
-                 <KeyRound size={28}/>
-               </div>
-               <h2 className="text-2xl font-black text-white">Login Sistem</h2>
-               <p className="text-white/80 text-sm mt-1">Masuk untuk mengelola data RS.</p>
-            </div>
-
-            <div className="flex bg-white/20 p-1.5 rounded-xl mb-6 border border-white/20">
-               <button onClick={() => setActiveTab('room')} className={`flex-1 py-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab==='room' ? 'bg-white text-indigo-600 shadow-sm' : 'text-white/70 hover:text-white'}`}>Petugas</button>
-               <button onClick={() => setActiveTab('admin')} className={`flex-1 py-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab==='admin' ? 'bg-white text-indigo-600 shadow-sm' : 'text-white/70 hover:text-white'}`}>Admin</button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-               {activeTab === 'room' && (
-                 <div>
-                    <label className="block text-xs font-bold text-white/80 uppercase mb-2">Pilih Ruangan</label>
-                    <div className="relative">
-                      <select value={room} onChange={e=>setRoom(e.target.value)} className="w-full glass-input p-3 rounded-xl font-bold appearance-none cursor-pointer">
-                          {rooms.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-                      </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none" size={18}/>
-                    </div>
-                 </div>
-               )}
-               
-               <div>
-                  <label className="block text-xs font-bold text-white/80 uppercase mb-2">Password ({activeTab === 'admin' ? 'admin123' : '123'})</label>
-                  <div className="relative">
-                     <input type="password" value={pass} onChange={e=>setPass(e.target.value)} className="w-full glass-input p-3 rounded-xl font-bold" placeholder="•••••••" required/>
-                     <ShieldCheck className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80" size={18}/>
-                  </div>
-               </div>
-
-               <button className={`w-full py-4 rounded-xl font-bold text-sm shadow-lg transition-transform hover:-translate-y-1 btn-menu bg-white text-indigo-600`}>
-                 MASUK SEKARANG
-               </button>
-            </form>
-          </div>
-      </div>
-    );
-};
-
-// 5. PANEL INPUT (LOGIC UTAMA)
-const PanelInput = ({ user, db, rooms, setRooms, inventory, reports, onBack, onLogout, showConfirm, showToast }) => {
-    const isAdmin = user.role === 'admin';
-    const [tab, setTab] = useState('pasien'); 
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Layanan Digital RSUD Lebong</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
-    // Status Filter
-    const [printFilter, setPrintFilter] = useState('Semua');
-    const displayedInventory = isAdmin 
-      ? (printFilter === 'Semua' ? inventory : inventory.filter(i => i.room === printFilter))
-      : inventory.filter(i => i.room === user.name);
+    <!-- Firebase SDK Integration -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, addDoc, onSnapshot, updateDoc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 
-    // Filter & Sort Laporan
-    const myReports = isAdmin 
-      ? reports.sort((a,b) => new Date(b.date) - new Date(a.date)) 
-      : reports.filter(r => r.room === user.name).sort((a,b) => new Date(b.date) - new Date(a.date));
-
-    // Status Formulir
-    const [reportData, setReportData] = useState({ 
-      id: null, date: getLocalDate(), bpjs: '', umum: '', room: isAdmin ? (rooms[0]?.name || '') : user.name 
-    });
-    const [assetData, setAssetData] = useState({ 
-      id: null, name: '', merk: '', tahun: '', baik: 0, rusakRingan: 0, rusakBerat: 0, nextKalibrasi: '', room: isAdmin ? (rooms[0]?.name || '') : user.name 
-    });
-    const [newRoom, setNewRoom] = useState({ name: '', password: '' });
-    
-    const [isEditingReport, setIsEditingReport] = useState(false);
-    const [isEditingAsset, setIsEditingAsset] = useState(false);
-    const [isEditingRoom, setIsEditingRoom] = useState(false);
-    const [editRoomOriginalName, setEditRoomOriginalName] = useState("");
-
-    // --- LOGIC HAPUS (FIREBASE) ---
-    const handleDelete = async (collectionName, id, name) => {
-      // Hanya izinkan operasi jika DB aktif (bukan mode mock lokal)
-      if (db.isLocal) {
-        return showToast(`Gagal menghapus ${name}. Operasi DB tidak diizinkan di Mode Lokal.`, 'error');
-      }
-      
-      showConfirm('Hapus Data?', `Apakah Anda yakin ingin menghapus "${name}"?`, async () => {
-        try {
-          await deleteDoc(doc(db, ...BASE_PATH_SEGMENTS, collectionName, id));
-          showToast(`${name} berhasil dihapus!`, 'success');
-        } catch (e) {
-          console.error("Error deleting document: ", e);
-          showToast(`Gagal menghapus ${name}.`, 'error');
-        }
-      });
-    };
-    
-    const handleDeleteAsset = (id, name) => handleDelete(INVENTORY_COLLECTION, id, name);
-    const handleDeleteReport = (id, date) => handleDelete(REPORTS_COLLECTION, id, `Laporan tgl. ${date}`);
-    const handleDeleteRoom = (id, name) => handleDelete(ROOMS_COLLECTION, id, `Ruangan ${name}`);
-
-
-    // --- LOGIC SIMPAN LAPORAN (FIREBASE) ---
-    const saveReport = async (e) => {
-      e.preventDefault();
-      // Mencegah operasi jika DB tidak aktif
-      if (db.isLocal) {
-         return showToast("Gagal menyimpan laporan. Operasi DB tidak diizinkan di Mode Lokal.", 'error');
-      }
-
-      const valBpjs = parseInt(reportData.bpjs) || 0;
-      const valUmum = parseInt(reportData.umum) || 0;
-      const total = valBpjs + valUmum;
-      
-      const finalRoom = isAdmin ? reportData.room : user.name;
-      const finalData = { 
-        ...reportData, 
-        bpjs: valBpjs, 
-        umum: valUmum, 
-        room: finalRoom, 
-        total,
-        // Remove 'id' before saving to Firestore, Firestore uses its own ID
-        id: undefined 
-      };
-
-      try {
-        if (isEditingReport) {
-            // Update
-            await setDoc(doc(db, ...BASE_PATH_SEGMENTS, REPORTS_COLLECTION, reportData.id), finalData);
-            showToast("Laporan berhasil diperbarui!", 'success');
-            setIsEditingReport(false);
-        } else {
-            // Check for duplicate (date and room name) before adding
-            const existingReport = myReports.find(r => r.date === finalData.date && r.room === finalData.room);
-            if (existingReport) {
-                showToast(`Laporan untuk ruangan ${finalData.room} pada tanggal ${finalData.date} sudah ada. Silakan edit laporan tersebut.`, 'error');
-                return;
-            }
-            // Add new
-            await addDoc(collection(db, ...BASE_PATH_SEGMENTS, REPORTS_COLLECTION), finalData);
-            showToast("Laporan berhasil disimpan!", 'success');
-        }
-      } catch (e) {
-        console.error("Error saving report: ", e);
-        showToast("Gagal menyimpan laporan.", 'error');
-      }
-      setReportData({ ...reportData, id: null, bpjs: '', umum: '', date: getLocalDate() });
-    };
-
-    // --- LOGIC SIMPAN ASET (FIREBASE) ---
-    const saveAsset = async (e) => {
-      e.preventDefault();
-       // Mencegah operasi jika DB tidak aktif
-      if (db.isLocal) {
-         return showToast("Gagal menyimpan aset. Operasi DB tidak diizinkan di Mode Lokal.", 'error');
-      }
-
-      const baik = parseInt(assetData.baik) || 0;
-      const rr = parseInt(assetData.rusakRingan) || 0;
-      const rb = parseInt(assetData.rusakBerat) || 0;
-      
-      const total = baik + rr + rb;
-      const status = total === 0 ? 'Kosong' : (rr > 0 || rb > 0) ? (rb > 0 ? 'Rusak Berat' : 'Rusak Ringan') : 'Baik';
-      const finalRoom = isAdmin ? assetData.room : user.name;
-      const payload = { 
-        ...assetData, 
-        room: finalRoom, 
-        baik, rusakRingan: rr, rusakBerat: rb, 
-        jumlah: total, 
-        status,
-        id: undefined // Remove 'id'
-      };
-      
-      try {
-        if (isEditingAsset) {
-            // Update
-            await setDoc(doc(db, ...BASE_PATH_SEGMENTS, INVENTORY_COLLECTION, assetData.id), payload);
-            showToast("Aset berhasil diperbarui!", 'success');
-            setIsEditingAsset(false);
-        } else {
-            // Add new
-            await addDoc(collection(db, ...BASE_PATH_SEGMENTS, INVENTORY_COLLECTION), payload);
-            showToast("Aset berhasil ditambahkan!", 'success');
-        }
-      } catch (e) {
-        console.error("Error saving asset: ", e);
-        showToast("Gagal menyimpan aset.", 'error');
-      }
-      setAssetData({ ...assetData, id: null, name: '', merk: '', tahun: '', baik: 0, rusakRingan: 0, rusakBerat: 0, nextKalibrasi: '' });
-    };
-
-    // --- LOGIC SIMPAN RUANGAN (FIREBASE) ---
-    const saveRoom = async (e) => {
-      e.preventDefault();
-      if(!newRoom.name || !newRoom.password) {
-          showToast("Nama Ruangan dan Password tidak boleh kosong.", 'error');
-          return;
-      }
-      // Mencegah operasi jika DB tidak aktif
-      if (db.isLocal) {
-         return showToast("Gagal menyimpan ruangan. Operasi DB tidak diizinkan di Mode Lokal.", 'error');
-      }
-      
-      const payload = {...newRoom};
-
-      try {
-        if (isEditingRoom) {
-          // Find the room document ID from the current rooms list
-          const targetRoom = rooms.find(r => r.name === editRoomOriginalName);
-          if (targetRoom) {
-            // Update the existing room document
-            await setDoc(doc(db, ...BASE_PATH_SEGMENTS, ROOMS_COLLECTION, targetRoom.id), payload);
-            showToast(`Ruangan ${newRoom.name} diperbarui!`, 'success');
-            setIsEditingRoom(false);
-            setEditRoomOriginalName("");
-          } else {
-            showToast("Ruangan yang akan diedit tidak ditemukan.", 'error');
-          }
-        } else {
-            // Mencegah nama ruangan duplikat
-            if (rooms.some(r => r.name === newRoom.name)) {
-              showToast(`Ruangan dengan nama "${newRoom.name}" sudah ada.`, 'error');
-              return;
-            }
-            // Add new
-            await addDoc(collection(db, ...BASE_PATH_SEGMENTS, ROOMS_COLLECTION), payload);
-            showToast("Ruangan baru ditambahkan!", 'success');
-        }
-      } catch (e) {
-        console.error("Error saving room: ", e);
-        showToast("Gagal menyimpan ruangan.", 'error');
-      }
-      setNewRoom({name:'', password:''});
-    };
-
-    // --- EKSPOR PDF (KARTU INVENTARIS RUANGAN) ---
-    const downloadPDF = async () => {
-      // 1. Memuat Pustaka
-      const libReady = await ensurePdfLibraries();
-      if (!libReady) {
-          showToast("Gagal memuat library PDF. Cek koneksi internet.", 'error');
-          return;
-      }
-      
-      // 2. Memastikan Objek Pustaka Tersedia
-      if (!window.jspdf || !window.jspdf.jsPDF) {
-          showToast("Sistem PDF sedang disiapkan, silakan klik lagi dalam 2 detik.", 'warning');
-          return;
-      }
-
-      try {
-          // 3. Inisiasi Dokumen
-          const { jsPDF } = window.jspdf;
-          const doc = new jsPDF('l', 'mm', 'a4'); // mode landscape
-          
-          const roomNameTitle = isAdmin ? (printFilter === 'Semua' ? 'SEMUA RUANGAN (REKAPITULASI)' : printFilter.toUpperCase()) : user.name.toUpperCase();
-          
-          // Header RSUD Lebong
-          doc.setFontSize(12); doc.setFont("helvetica", "bold");
-          doc.text("PEMERINTAH KABUPATEN LEBONG", 148.5, 15, { align: "center" });
-          doc.setFontSize(14); doc.text("RUMAH SAKIT UMUM DAERAH", 148.5, 22, { align: "center" });
-          doc.setFontSize(10); doc.setFont("helvetica", "normal");
-          doc.text("Jl. Muara Aman-Curup Desa Muning Agung Kec. Lebong Sakti Kab. Lebong 39163", 148.5, 28, { align: "center" });
-          doc.text("Email: rsudlebong20@gmail.com", 148.5, 33, { align: "center" });
-          doc.setLineWidth(0.5); doc.line(10, 36, 287, 36); 
-
-          // Judul Dokumen
-          doc.setFontSize(14); doc.setFont("helvetica", "bold");
-          doc.text("KARTU INVENTARIS RUANGAN (KIR)", 148.5, 45, { align: "center" });
-          doc.setFontSize(11); doc.text(`NAMA RUANGAN: ${roomNameTitle}`, 14, 55);
-
-          // Siapkan Data Tabel
-          const headers = [[ { content: 'NO', rowSpan: 2 }, { content: 'NAMA BARANG', rowSpan: 2 }, { content: 'MERK', rowSpan: 2 }, { content: 'THN', rowSpan: 2 }, { content: 'JML', rowSpan: 2 }, { content: 'KONDISI', colSpan: 3 }, { content: 'KET (KALIBRASI)', rowSpan: 2 } ], [ { content: 'B' }, { content: 'RR' }, { content: 'RB' } ]];
-          const data = displayedInventory.map((i, idx) => [ idx + 1, i.name, i.merk || '-', i.tahun || '-', i.jumlah, i.baik, i.rusakRingan, i.rusakBerat, i.nextKalibrasi || "-" ]);
-
-          // @ts-ignore (Menggunakan jspdf-autotable)
-          doc.autoTable({ head: headers, body: data, startY: 60, theme: 'grid', styles: { fontSize: 9, cellPadding: 2, lineColor: [0, 0, 0], lineWidth: 0.1 }, headStyles: { fillColor: [20, 184, 166], textColor: [255, 255, 255], lineWidth: 0.1 } });
-
-          // Tanda Tangan
-          // @ts-ignore
-          const finalY = doc.lastAutoTable.finalY + 20;
-          const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-          doc.text(`Lebong, ${dateStr}`, 220, finalY);
-          doc.text("Penanggung Jawab Ruangan", 220, finalY + 6);
-          doc.text("_______________________", 220, finalY + 30);
-          
-          doc.save(`KIR_${roomNameTitle}.pdf`);
-      } catch (err) {
-          console.error(err);
-          showToast("Terjadi kesalahan saat membuat PDF.", 'error');
-      }
-    };
-
-    // --- EKSPOR EXCEL ---
-    const downloadExcel = () => {
-      const roomNameTitle = isAdmin ? (printFilter === 'Semua' ? 'SEMUA RUANGAN' : printFilter) : user.name;
-      const fileName = `Inventaris_${roomNameTitle}.xls`;
-      const tableHTML = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><style>table{border-collapse:collapse;width:100%;}th,td{border:1px solid #000000;padding:5px;text-align:center;font-family:Arial,sans-serif;}th{background-color:#f2f2f2;font-weight:bold;}.text-left{text-align:left;}</style></head><body><h3 style="text-align:center;">KARTU INVENTARIS RUANGAN (KIR) - ${roomNameTitle}</h3><table><thead><tr><th rowspan="2">NO</th><th rowspan="2">NAMA BARANG</th><th rowspan="2">MERK</th><th rowspan="2">TAHUN</th><th rowspan="2">JUMLAH</th><th colspan="3">KONDISI</th><th rowspan="2">KET (KALIBRASI)</th></tr><tr><th>BAIK</th><th>RR</th><th>RB</th></tr></thead><tbody>${displayedInventory.map((item, index) => `<tr><td>${index + 1}</td><td class="text-left">${item.name}</td><td>${item.merk || '-'}</td><td>${item.tahun || '-'}</td><td>${item.jumlah}</td><td>${item.baik}</td><td>${item.rusakRingan}</td><td>${item.rusakBerat}</td><td>${item.nextKalibrasi || '-'}</td></tr>`).join('')}</tbody></table></body></html>`;
-      const blob = new Blob([tableHTML], { type: 'application/vnd.ms-excel' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
-    };
-
-    // Reset form saat tab berpindah
-    useEffect(() => {
-        setReportData({ id: null, date: getLocalDate(), bpjs: '', umum: '', room: isAdmin ? (rooms[0]?.name || '') : user.name });
-        setIsEditingReport(false);
-        setAssetData({ id: null, name: '', merk: '', tahun: '', baik: 0, rusakRingan: 0, rusakBerat: 0, nextKalibrasi: '', room: isAdmin ? (rooms[0]?.name || '') : user.name });
-        setIsEditingAsset(false);
-        setNewRoom({ name: '', password: '' });
-        setIsEditingRoom(false);
-    }, [tab, isAdmin, rooms, user.name]);
-
-    return (
-      <div className="p-6 lg:p-10 pb-24 h-full overflow-y-auto pop-in">
-          {/* HEADER */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <div className="flex items-center gap-4 w-full md:w-auto">
-               <button onClick={onBack} className="p-3 bg-white rounded-xl shadow-sm border border-slate-200 hover:bg-slate-50 text-slate-600 transition-all">
-                 <ArrowLeft size={20}/>
-               </button>
-               <div>
-                 <h2 className="text-3xl font-black text-slate-800">Panel <span className="text-blue-600">{isAdmin ? 'Super Admin' : user.name}</span></h2>
-                 <p className="text-slate-500 font-medium">Kelola data sistem secara lengkap.</p>
-                 {db && db.isLocal && <span className="text-xs font-bold text-rose-500 mt-1 block">MODE LOKAL: Operasi Simpan/Hapus Dinonaktifkan.</span>}
-               </div>
-               {/* TOMBOL LOGOUT KHUSUS MOBILE */}
-               <button onClick={onLogout} className="md:hidden ml-auto p-3 bg-white text-rose-500 rounded-xl shadow-sm border border-slate-200 hover:bg-rose-50 transition-all">
-                 <LogOut size={20}/>
-               </button>
-            </div>
-            
-            <div className="bg-white p-1.5 rounded-2xl border border-slate-200 flex shadow-sm">
-               <button onClick={()=>setTab('pasien')} className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider btn-menu ${tab==='pasien' ? 'btn-blue shadow-lg shadow-blue-500/30' : 'bg-transparent text-slate-500 hover:bg-slate-50'}`}>Pasien</button>
-               <button onClick={()=>setTab('aset')} className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider btn-menu ${tab==='aset' ? 'btn-emerald shadow-lg shadow-emerald-500/30' : 'bg-transparent text-slate-500 hover:bg-slate-50'}`}>Aset</button>
-               {isAdmin && <button onClick={()=>setTab('ruangan')} className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider btn-menu ${tab==='ruangan' ? 'bg-orange-100 text-orange-700 shadow-sm' : 'bg-transparent text-slate-500 hover:bg-slate-50'}`}>Ruangan</button>}
-            </div>
-          </div>
-
-          {/* TAMPILAN: PASIEN */}
-          {tab === 'pasien' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="card-base p-6 h-fit bg-gradient-to-br from-blue-500 to-cyan-500 shadow-2xl border-none">
-                <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Edit className="text-white"/> {isEditingReport ? 'Edit Laporan' : 'Input Pasien Harian'}</h3>
-                <form onSubmit={saveReport} className="space-y-4">
-                    {isAdmin ? (
-                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Pilih Ruangan</label><select value={reportData.room} onChange={e=>setReportData({...reportData, room:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold">{rooms.map(r=><option key={r.id} value={r.name}>{r.name}</option>)}</select></div>
-                    ) : (
-                      <div className="bg-white/20 p-3 rounded-xl border border-white/20">
-                          <span className="text-[10px] font-bold text-white/80 uppercase block">Ruangan</span>
-                          <span className="font-black text-white text-lg">{user.name}</span>
-                      </div>
-                    )}
-                    <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Tanggal</label><input type="date" value={reportData.date} onChange={e=>setReportData({...reportData, date:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" required/></div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">BPJS</label><input type="number" value={reportData.bpjs} onChange={e=>setReportData({...reportData, bpjs:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" required/></div>
-                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Umum</label><input type="number" value={reportData.umum} onChange={e=>setReportData({...reportData, umum:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" required/></div>
-                    </div>
-                    <div className="flex gap-2 pt-2">
-                      {isEditingReport && <button type="button" onClick={()=>{setIsEditingReport(false); setReportData({...reportData, id:null, bpjs:'', umum:'', date: getLocalDate()})}} className="flex-1 bg-white/20 text-white py-3 rounded-xl font-bold text-sm hover:bg-white/30">Batal</button>}
-                      {/* Tombol dinonaktifkan jika dalam mode lokal (tidak ada DB) */}
-                      <button className="flex-1 bg-white text-blue-600 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-50 transition-all" disabled={db && db.isLocal}>{isEditingReport ? 'Update Data' : 'Simpan Data'}</button>
-                    </div>
-                </form>
-              </div>
-              <div className="lg:col-span-2 space-y-4">
-                {myReports.length === 0 ? <div className="card-white p-6 text-center text-slate-400 font-medium">Belum ada laporan yang tersedia.</div> :
-                myReports.map(item => (
-                    <div key={item.id} className="card-white p-4 flex items-center justify-between group">
-                      <div className="flex items-center gap-4">
-                         <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black text-xl border border-blue-100">{item.total}</div>
-                         <div><h4 className="font-bold text-slate-800">{item.room}</h4><p className="text-xs text-slate-400">{item.date}</p></div>
-                      </div>
-                      <div className="flex gap-2">
-                          <span className="hidden sm:inline bg-slate-50 px-3 py-1 rounded-lg text-xs font-bold text-slate-500 border border-slate-200">BPJS: {item.bpjs}</span>
-                          <span className="hidden sm:inline bg-slate-50 px-3 py-1 rounded-lg text-xs font-bold text-slate-500 border border-slate-200">Umum: {item.umum}</span>
-                          <button onClick={() => { setReportData(item); setIsEditingReport(true); }} className="p-2 bg-indigo-50 text-indigo-500 rounded-lg hover:bg-indigo-100"><Edit size={16}/></button>
-                          <button onClick={() => handleDeleteReport(item.id, item.date)} className="p-2 btn-slate rounded-lg" disabled={db && db.isLocal}><Trash2 size={16}/></button>
-                      </div>
-                    </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* TAMPILAN: ASET */}
-          {tab === 'aset' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="card-base p-6 h-fit bg-gradient-to-br from-emerald-500 to-teal-500 shadow-2xl border-none">
-                <h3 className="font-bold text-white mb-4 flex items-center gap-2"><PackagePlus className="text-white"/> {isEditingAsset ? 'Edit Aset' : 'Tambah Aset'}</h3>
-                <form onSubmit={saveAsset} className="space-y-3">
-                    {isAdmin ? (
-                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Ruangan</label><select value={assetData.room} onChange={e=>setAssetData({...assetData, room:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold">{rooms.map(r=><option key={r.id} value={r.name}>{r.name}</option>)}</select></div>
-                    ) : (
-                      <div className="bg-white/20 p-3 rounded-xl border border-white/20">
-                          <span className="text-[10px] font-bold text-white/80 uppercase block">Ruangan</span>
-                          <span className="font-black text-white text-lg">{user.name}</span>
-                      </div>
-                    )}
-                    <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Nama Barang</label><input value={assetData.name} onChange={e=>setAssetData({...assetData, name:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" required placeholder="Contoh: USG"/></div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Merk/Type</label><input value={assetData.merk} onChange={e=>setAssetData({...assetData, merk:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold"/></div>
-                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Tahun</label><input type="number" value={assetData.tahun} onChange={e=>setAssetData({...assetData, tahun:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold"/></div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 p-3 bg-white/20 rounded-xl border border-white/20">
-                      <div><label className="text-[9px] font-bold text-white text-center block">Baik</label><input type="number" value={assetData.baik} onChange={e=>setAssetData({...assetData, baik:e.target.value})} className="w-full glass-input p-2 rounded-lg text-center font-bold text-sm"/></div>
-                      <div><label className="text-[9px] font-bold text-white text-center block">R.Ringan</label><input type="number" value={assetData.rusakRingan} onChange={e=>setAssetData({...assetData, rusakRingan:e.target.value})} className="w-full glass-input p-2 rounded-lg text-center font-bold text-sm"/></div>
-                      <div><label className="text-[9px] font-bold text-white text-center block">R.Berat</label><input type="number" value={assetData.rusakBerat} onChange={e=>setAssetData({...assetData, rusakBerat:e.target.value})} className="w-full glass-input p-2 rounded-lg text-center font-bold text-sm"/></div>
-                    </div>
-                    <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Jadwal Kalibrasi</label><input type="date" value={assetData.nextKalibrasi} onChange={e=>setAssetData({...assetData, nextKalibrasi:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold"/></div>
-                    <div className="flex gap-2 pt-2">
-                      {isEditingAsset && <button type="button" onClick={()=>{setIsEditingAsset(false); setAssetData({id:null, name:'', merk:'', tahun:'', baik:0, rusakRingan:0, rusakBerat:0, nextKalibrasi:''})}} className="flex-1 bg-white/20 text-white py-3 rounded-xl font-bold text-sm hover:bg-white/30">Batal</button>}
-                      <button className="flex-1 bg-white text-emerald-600 py-3 rounded-xl font-bold shadow-lg hover:bg-emerald-50 transition-all" disabled={db && db.isLocal}>{isEditingAsset ? 'Update' : 'Simpan'}</button>
-                    </div>
-                </form>
-              </div>
-
-              <div className="lg:col-span-2 space-y-4">
-                <div className="flex justify-between items-center bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center gap-3">
-                       <h4 className="font-bold text-slate-700 ml-2">Daftar Inventaris</h4>
-                        {/* DROPDOWN FILTER UNTUK ADMIN */}
-                        {isAdmin && (
-                            <div className="relative">
-                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Filter size={14}/></div>
-                                <select 
-                                    value={printFilter} 
-                                    onChange={(e) => setPrintFilter(e.target.value)}
-                                    className="pl-9 pr-8 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 bg-slate-50 focus:outline-none focus:border-blue-400 cursor-pointer appearance-none"
-                                >
-                                    <option value="Semua">Semua Ruangan</option>
-                                    {rooms.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-                                </select>
-                                <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex gap-2">
-                         <button onClick={downloadExcel} className="px-3 py-2 bg-emerald-100 text-emerald-600 rounded-lg text-xs font-bold hover:bg-emerald-100 flex gap-2 items-center" disabled={db && db.isLocal}><FileSpreadsheet size={16}/> Excel</button>
-                         <button onClick={downloadPDF} className="px-3 py-2 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold hover:bg-orange-100 flex gap-2 items-center" disabled={db && db.isLocal}><FileDown size={16}/> PDF</button>
-                    </div>
-                </div>
-                <div className="card-white overflow-hidden">
-                    <div className="overflow-x-auto p-4">
-                        <table className="color-table">
-                           <thead><tr><th>Barang</th><th>Jml</th><th>Baik</th><th>RR</th><th>RB</th><th>Aksi</th></tr></thead>
-                           <tbody>
-                             {displayedInventory.length === 0 ? <tr><td colSpan="6" className="text-center text-slate-400 py-6">Belum ada data.</td></tr> : 
-                             displayedInventory.map(i => (
-                                 <tr key={i.id}>
-                                    <td><div className="font-bold">{i.name}</div><div className="text-[10px] text-slate-400">{i.room} - {i.merk || '-'}</div></td>
-                                    <td className="text-center font-black text-slate-600">{i.jumlah}</td>
-                                    <td className="text-center font-bold text-emerald-500">{i.baik}</td>
-                                    <td className="text-center font-bold text-orange-400">{i.rusakRingan}</td>
-                                    <td className="text-center font-bold text-slate-500">{i.rusakBerat}</td>
-                                    <td>
-                                       <div className="flex justify-center gap-2">
-                                           {(isAdmin || i.room === user.name) && (
-                                               <>
-                                                   <button onClick={() => { setAssetData(i); setIsEditingAsset(true); }} className="p-1.5 bg-indigo-50 text-indigo-500 rounded-lg hover:bg-indigo-100"><Edit size={14}/></button>
-                                                   <button onClick={() => handleDeleteAsset(i.id, i.name)} className="p-1.5 btn-slate rounded-lg" disabled={db && db.isLocal}><Trash2 size={14}/></button>
-                                               </>
-                                           )}
-                                       </div>
-                                    </td>
-                                 </tr>
-                             ))}
-                           </tbody>
-                        </table>
-                    </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAMPILAN: RUANGAN (KHUSUS ADMIN) */}
-          {tab === 'ruangan' && isAdmin && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="card-base p-6 h-fit bg-gradient-to-br from-purple-400 to-violet-500 shadow-2xl border-none">
-                <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Building className="text-white"/> {isEditingRoom ? 'Edit Ruangan' : 'Tambah Ruangan'}</h3>
-                <form onSubmit={saveRoom} className="space-y-4">
-                    <div><label className="text-[10px] font-bold text-white/80 uppercase ml-2">Nama Ruangan</label><input value={newRoom.name} onChange={e=>setNewRoom({...newRoom, name:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" placeholder="Contoh: Poli Syaraf"/></div>
-                    <div><label className="text-[10px] font-bold text-white/80 uppercase ml-2">Password</label><input value={newRoom.password} onChange={e=>setNewRoom({...newRoom, password:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" placeholder="123"/></div>
-                    <div className="flex gap-2 pt-2">
-                      {isEditingRoom && <button type="button" onClick={()=>{setIsEditingRoom(false); setNewRoom({name:'', password:''})}} className="flex-1 bg-white/20 text-white py-3 rounded-xl font-bold text-sm hover:bg-white/30">Batal</button>}
-                      <button className="flex-1 bg-white text-violet-600 py-3 rounded-xl font-bold shadow-lg hover:bg-violet-50 transition-all" disabled={db && db.isLocal}>{isEditingRoom ? 'Update' : 'Tambah'}</button>
-                    </div>
-                </form>
-              </div>
-              <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {rooms.map(r => (
-                    <div key={r.id} className="card-white p-5 flex justify-between items-center group">
-                      <div className="flex items-center gap-3">
-                         <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-400 border border-slate-200">{r.name.charAt(0)}</div>
-                         <div><h4 className="font-bold text-slate-800">{r.name}</h4><p className="text-[10px] text-slate-400 font-mono">Pass: {r.password}</p></div>
-                      </div>
-                      <div className="flex gap-2">
-                          <button onClick={() => { setNewRoom(r); setEditRoomOriginalName(r.name); setIsEditingRoom(true); }} className="p-2 bg-indigo-50 text-indigo-500 rounded-xl hover:bg-indigo-100"><Edit size={16}/></button>
-                          <button onClick={() => handleDeleteRoom(r.id, r.name)} className="p-2 btn-slate rounded-xl" disabled={db && db.isLocal}><Trash2 size={16}/></button>
-                      </div>
-                    </div>
-                ))}
-              </div>
-            </div>
-          )}
-      </div>
-    );
-};
-
-// 6. KONTENER APLIKASI UTAMA
-const App = () => {
-    // Firebase State
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    const [isDataInitialized, setIsDataInitialized] = useState(false);
-
-    // Application State
-    const [view, setView] = useState('dashboard');
-    const [user, setUser] = useState(null); // {name: string, role: 'admin' | 'room'}
-    const [rooms, setRooms] = useState([]);
-    const [inventory, setInventory] = useState([]);
-    const [reports, setReports] = useState([]);
-
-    // STATUS TOAST & MODAL
-    const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
-    const [confirmModal, setConfirmModal] = useState({
-      isOpen: false,
-      title: '',
-      message: '',
-      onConfirm: null,
-      type: 'danger'
-    });
-
-    // FUNGSI BANTU TOAST
-    const showToast = (message, type = 'success') => {
-        setToast({ show: true, message, type });
-        // Sembunyikan toast setelah 3 detik
-        setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
-    };
-
-    // FUNGSI BANTU KONFIRMASI
-    const showConfirm = (title, message, action, type='danger') => {
-      setConfirmModal({
-        isOpen: true,
-        title,
-        message,
-        onConfirm: () => {
-          action();
-          setConfirmModal(prev => ({...prev, isOpen: false}));
-        },
-        onClose: () => setConfirmModal(prev => ({...prev, isOpen: false})),
-        type
-      });
-    };
-
-    // 1. FIREBASE INITIALIZATION & AUTHENTICATION
-    useEffect(() => {
-        
-        // Cek jika konfigurasi Firebase tidak ada ATAU USE_LOCAL_MOCK_MODE disetel TRUE
-        if (!Object.keys(firebaseConfig).length || USE_LOCAL_MOCK_MODE) {
-            console.warn("Firebase config missing OR USE_LOCAL_MOCK_MODE is TRUE. Running in LOCAL MOCK MODE.");
-            // --- Fallback ke Local Mock Mode ---
-            setDb({ isLocal: true, name: 'MockDB' }); // Tandai DB sebagai lokal/mock
-            setRooms(INITIAL_ROOMS_MOCK);
-            setInventory(INITIAL_INVENTORY_MOCK);
-            setReports(INITIAL_REPORTS_MOCK);
-            setIsDataInitialized(true);
-            setIsAuthReady(true);
-            return;
-        }
-
-        // --- Mulai Inisialisasi Firebase Asli ---
-        try {
-            const app = initializeApp(firebaseConfig);
-            const firestore = getFirestore(app);
-            firestore.isLocal = false; 
-            const firebaseAuth = getAuth(app);
-            
-            setDb(firestore);
-            setAuth(firebaseAuth);
-
-            // Authentication Listener
-            onAuthStateChanged(firebaseAuth, async (currentUser) => {
-                if (!currentUser) {
-                    try {
-                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                        if (token) {
-                            await signInWithCustomToken(firebaseAuth, token);
-                        } else {
-                            await signInAnonymously(firebaseAuth);
-                        }
-                    } catch (error) {
-                        console.error("Firebase Sign-In Failed:", error);
-                    }
-                }
-                setIsAuthReady(true); 
-            });
-
-        } catch (e) {
-            console.error("Error initializing Firebase:", e);
-            showToast("Gagal Inisialisasi Firebase. Cek konsol.", 'error');
-            setIsAuthReady(true); 
-        }
-    }, []);
-
-    // 2. INITIAL DATA SETUP (Seed Mock Data if collections are empty - HANYA JALAN JIKA DB ASLI AKTIF)
-    useEffect(() => {
-      const checkAndSeedData = async () => {
-        // Hanya jalankan jika DB asli aktif (bukan mode lokal/mock)
-        if (!db || db.isLocal || !isAuthReady || isDataInitialized) return;
-        
-        const roomsRef = collection(db, ...BASE_PATH_SEGMENTS, ROOMS_COLLECTION);
-        const roomsSnapshot = await getDocs(roomsRef);
-        
-        if (roomsSnapshot.empty) {
-            console.log("Seeding initial mock data into Firestore...");
-            const batch = writeBatch(db);
-
-            // Seed Rooms
-            INITIAL_ROOMS_MOCK.forEach(room => {
-                const newDocRef = doc(roomsRef);
-                // Hapus ID mock, Firestore akan membuatnya sendiri
-                const { id, ...roomData } = room; 
-                batch.set(newDocRef, roomData);
-            });
-
-            // Seed Inventory
-            const inventoryRef = collection(db, ...BASE_PATH_SEGMENTS, INVENTORY_COLLECTION);
-            INITIAL_INVENTORY_MOCK.forEach(item => {
-                const newDocRef = doc(inventoryRef);
-                const { id, ...itemData } = item;
-                batch.set(newDocRef, itemData);
-            });
-
-            // Seed Reports
-            const reportsRef = collection(db, ...BASE_PATH_SEGMENTS, REPORTS_COLLECTION);
-            INITIAL_REPORTS_MOCK.forEach(item => {
-                const newDocRef = doc(reportsRef);
-                const { id, ...itemData } = item;
-                batch.set(newDocRef, itemData);
-            });
-
-            await batch.commit();
-            console.log("Initial data seeding complete.");
-        }
-        setIsDataInitialized(true);
-      };
-
-      if (db && !db.isLocal && isAuthReady) {
-        checkAndSeedData();
-      }
-    }, [db, isAuthReady, isDataInitialized]);
-
-
-    // 3. REAL-TIME DATA SUBSCRIPTION (onSnapshot - HANYA JALAN JIKA DB ASLI AKTIF)
-    useEffect(() => {
-        // Hanya jalankan jika DB asli aktif (bukan mode lokal/mock)
-        if (!db || db.isLocal || !isDataInitialized) return;
-
-        // Listener for Rooms
-        const unsubscribeRooms = onSnapshot(collection(db, ...BASE_PATH_SEGMENTS, ROOMS_COLLECTION), (snapshot) => {
-            const fetchedRooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setRooms(fetchedRooms);
-        }, (error) => {
-            console.error("Error fetching rooms:", error);
-            showToast("Gagal memuat data Ruangan (Live).", 'error');
-        });
-
-        // Listener for Inventory
-        const unsubscribeInventory = onSnapshot(collection(db, ...BASE_PATH_SEGMENTS, INVENTORY_COLLECTION), (snapshot) => {
-            const fetchedInventory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setInventory(fetchedInventory);
-        }, (error) => {
-            console.error("Error fetching inventory:", error);
-            showToast("Gagal memuat data Inventaris (Live).", 'error');
-        });
-
-        // Listener for Reports
-        const unsubscribeReports = onSnapshot(collection(db, ...BASE_PATH_SEGMENTS, REPORTS_COLLECTION), (snapshot) => {
-            const fetchedReports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setReports(fetchedReports);
-        }, (error) => {
-            console.error("Error fetching reports:", error);
-            showToast("Gagal memuat data Laporan (Live).", 'error');
-        });
-
-
-        // Cleanup subscriptions
-        return () => {
-            unsubscribeRooms();
-            unsubscribeInventory();
-            unsubscribeReports();
+        const firebaseConfig = {
+            apiKey: "AIzaSyCcMsPH50FNflMo5UuHTOGNG-Wa3bFQ3qM",
+            authDomain: "rsud-lebong-portal.firebaseapp.com",
+            projectId: "rsud-lebong-portal",
+            storageBucket: "rsud-lebong-portal.firebasestorage.app",
+            messagingSenderId: "1035852112596",
+            appId: "1:1035852112596:web:abdb442a8adc46a96b9141",
+            measurementId: "G-KLN4YW2RXE"
         };
 
-    }, [db, isDataInitialized]); // Depend on db and initial data flag
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const analytics = getAnalytics(app);
+        const appId = 'rsud-lebong-portal';
 
-    const handleLogin = (name, role) => {
-      // Mock login successful, set local user state
-      setUser({name, role});
-      setView('room_panel');
-      showToast(`Selamat datang, ${name}! Anda telah berhasil masuk.`, 'success');
-    };
+        window.AppState = {
+            reports: [],
+            rooms: [],
+            authConfig: { adminUser: 'admin', adminPass: 'admin', staffUser: 'petugas', staffPass: 'petugas' },
+            currentUser: null,
+            isProcessing: false
+        };
 
-    const handleLogout = () => {
-        setUser(null); 
-        setView('dashboard');
-        showToast("Anda telah keluar dari sistem.", 'info');
-    };
+        window.AuthManager = {
+            init: async () => {
+                try {
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    window.UIManager.notify("Koneksi Database Terganggu", false);
+                }
+            },
+            checkLogin: (username, password) => {
+                const conf = window.AppState.authConfig;
+                if (username === conf.adminUser && password === conf.adminPass) return 'ADMIN';
+                if (username === conf.staffUser && password === conf.staffPass) return 'STAFF';
+                return null;
+            }
+        };
 
-    // Show loading while data is initializing
-    if (!isAuthReady || !isDataInitialized || !db) {
-      return (
-        <div className="flex h-screen w-screen items-center justify-center bg-f0f9ff">
-          <Loader2 className="animate-spin text-blue-500" size={48} />
-          <p className="ml-4 font-bold text-slate-600">Memuat data...</p>
+        window.DataManager = {
+            setupListeners: () => {
+                const reportsCol = collection(db, 'artifacts', appId, 'public', 'data', 'reports');
+                onSnapshot(reportsCol, (snapshot) => {
+                    window.AppState.reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    if (window.UIManager.currentView === 'ADMIN_DASHBOARD') window.UIManager.renderAdminTable();
+                }, (err) => console.error("Firestore Error:", err));
+
+                const settingsDoc = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general');
+                onSnapshot(settingsDoc, (snapshot) => {
+                    if (snapshot.exists()) {
+                        const data = snapshot.data();
+                        if (data.rooms) window.AppState.rooms = data.rooms;
+                        if (data.auth) window.AppState.authConfig = data.auth;
+                    } else {
+                        setDoc(settingsDoc, { 
+                            rooms: ['IGD', 'ICU', 'Rawat Inap A', 'Rawat Inap B', 'OK (Kamar Bedah)', 'Poliklinik', 'Farmasi', 'Laboratorium'],
+                            auth: window.AppState.authConfig
+                        });
+                    }
+                    window.UIManager.syncUI();
+                    if (window.UIManager.currentView === 'ADMIN_SETTINGS') window.UIManager.renderSettingsRoomList();
+                }, (err) => console.error("Settings Error:", err));
+            },
+            addReport: async (data) => {
+                if (window.AppState.isProcessing) return;
+                window.AppState.isProcessing = true;
+                try {
+                    const col = collection(db, 'artifacts', appId, 'public', 'data', 'reports');
+                    await addDoc(col, { ...data, createdAt: new Date().toISOString() });
+                    return true;
+                } catch (e) { return false; } 
+                finally { window.AppState.isProcessing = false; }
+            },
+            updateReport: async (id, newData) => {
+                try {
+                    const d = doc(db, 'artifacts', appId, 'public', 'data', 'reports', id);
+                    await updateDoc(d, newData);
+                    return true;
+                } catch (e) { return false; }
+            },
+            deleteReport: async (id) => {
+                try {
+                    const d = doc(db, 'artifacts', appId, 'public', 'data', 'reports', id);
+                    await deleteDoc(d);
+                    return true;
+                } catch (e) { return false; }
+            },
+            updateSettings: async (newData) => {
+                try {
+                    const d = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general');
+                    await updateDoc(d, newData);
+                    return true;
+                } catch (e) { return false; }
+            }
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            window.AppState.currentUser = user;
+            if (user) window.DataManager.setupListeners();
+        });
+
+        window.AuthManager.init();
+    </script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --emerald: #10b981;
+            --glass: rgba(255, 255, 255, 0.04);
+            --border: rgba(255, 255, 255, 0.08);
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: #020617;
+            color: #f8fafc;
+            min-height: 100vh;
+            scroll-behavior: smooth;
+            overflow-x: hidden;
+        }
+
+        .serif-font { font-family: 'Playfair Display', serif; }
+
+        .modern-glass {
+            background: var(--glass);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+
+        .card-hover:hover {
+            transform: translateY(-8px);
+            background: rgba(255, 255, 255, 0.07);
+            border-color: rgba(59, 130, 246, 0.3);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .text-gradient {
+            background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .blob {
+            position: fixed;
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0) 70%);
+            border-radius: 50%;
+            z-index: -1;
+            filter: blur(60px);
+            pointer-events: none;
+        }
+
+        .view-transition {
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes marquee {
+            0% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+        }
+        .animate-marquee {
+            animation: marquee 50s linear infinite;
+        }
+
+        input, select, textarea {
+            transition: all 0.3s ease;
+            background: rgba(15, 23, 42, 0.6) !important;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--primary) !important;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+            outline: none;
+        }
+
+        input[type="date"] {
+            color-scheme: dark;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { height: 6px; width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+    </style>
+</head>
+<body class="flex flex-col antialiased">
+
+    <!-- Efek Latar Belakang -->
+    <div class="blob top-[-200px] right-[-200px]"></div>
+    <div class="blob bottom-[-200px] left-[-200px]" style="background: radial-gradient(circle, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0) 70%);"></div>
+
+    <!-- Teks Berjalan -->
+    <div class="w-full bg-slate-900/40 border-b border-white/5 py-2 overflow-hidden z-[110] relative backdrop-blur-md">
+        <div class="whitespace-nowrap animate-marquee inline-block">
+            <span class="text-[10px] font-black uppercase tracking-[0.25em] text-blue-400 mx-10">Selamat Datang di Portal Terpadu RSUD Lebong</span>
+            <span class="text-white/20 mx-2">•</span>
+            <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300 mx-10">Integritas dan Kualitas Pelayanan Publik Utama Kami</span>
+            <span class="text-white/20 mx-2">•</span>
+            <span class="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400 mx-10">Rumah Sakit Umum Daerah Lebong: Setulus Hati Kami Melayani</span>
         </div>
-      );
-    }
+    </div>
 
-    return (
-      <div className="flex h-screen w-screen overflow-hidden">
-          <style>{COLORFUL_THEME}</style>
-          <div className="colorful-bg"></div>
-          <Sidebar activeView={view} onViewChange={setView} user={user} onLogout={handleLogout}/>
-          <div className="flex-1 h-full relative overflow-hidden flex flex-col">
-              <div className="flex-1 overflow-y-auto w-full">
-                {view === 'dashboard' && <Dashboard reports={reports} inventory={inventory} rooms={rooms}/>}
-                {view === 'login' && <LoginView onLogin={handleLogin} rooms={rooms} showToast={showToast}/>}
-                {view === 'room_panel' && user && (
-                    <PanelInput 
-                      user={user} 
-                      db={db}
-                      rooms={rooms} 
-                      setRooms={setRooms} 
-                      inventory={inventory} 
-                      reports={reports} 
-                      onBack={() => setView('dashboard')} 
-                      onLogout={handleLogout}
-                      showConfirm={showConfirm} 
-                      showToast={showToast}
-                    />
-                )}
-              </div>
-          </div>
-          <MobileNav activeView={view} onViewChange={setView} user={user}/>
+    <!-- Navbar -->
+    <nav class="sticky top-0 z-[100] modern-glass border-b border-white/5 py-4 px-6 lg:px-16">
+        <div class="max-w-[1600px] mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-5 cursor-pointer group" onclick="UIManager.showView('HOME')">
+                <div class="h-11 w-11 lg:h-12 lg:w-12 bg-white rounded-2xl flex items-center justify-center text-slate-900 shadow-xl group-hover:rotate-12 transition-transform duration-500">
+                    <svg viewBox="0 0 24 24" class="h-6 w-6 lg:h-7 lg:w-7 fill-current"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 15l-4.5-4.5 1.41-1.41L12 15.17l6.59-6.59L20 10l-8 8z"/></svg>
+                </div>
+                <div>
+                    <span class="text-[10px] font-black tracking-[0.4em] uppercase text-blue-400/80 block mb-0.5 leading-none">Portal Layanan Digital</span>
+                    <span class="text-sm lg:text-lg font-bold text-white uppercase tracking-wider block leading-none">Rumah Sakit Umum Daerah Lebong</span>
+                </div>
+            </div>
+            <div id="live-time" class="hidden md:flex items-center text-xs font-semibold text-slate-400 bg-white/5 px-6 py-2.5 rounded-full border border-white/10 shadow-sm">
+                Memuat Waktu Sistem...
+            </div>
+        </div>
+    </nav>
 
-          {/* MODAL & TOAST GLOBAL */}
-          <ConfirmModal 
-            isOpen={confirmModal.isOpen}
-            title={confirmModal.title}
-            message={confirmModal.message}
-            onConfirm={confirmModal.onConfirm}
-            onClose={confirmModal.onClose}
-            type={confirmModal.type}
-          />
-          <ToastNotification toast={toast} setToast={setToast} />
-      </div>
-    );
-};
+    <!-- 1. BERANDA (HOME DASHBOARD) -->
+    <main id="mainDashboard" class="view-transition flex-grow container mx-auto px-6 py-16 lg:py-24 max-w-[1400px]">
+        <div class="text-center mb-20 lg:mb-28">
+            <div class="inline-flex items-center px-5 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-[11px] font-bold uppercase tracking-[0.2em] mb-8">
+                Sistem Informasi Kesehatan Terintegrasi
+            </div>
+            <h1 class="serif-font text-4xl md:text-5xl lg:text-6xl xl:text-7xl text-white mb-8 font-black tracking-tight leading-[1.15]">
+                <span class="md:block uppercase">INTEGRASI DATA DAN</span> 
+                <span class="text-gradient italic md:block uppercase">LAYANAN DIGITAL RUMAH SAKIT</span>
+            </h1>
+            <p class="max-w-4xl mx-auto text-slate-400 text-sm md:text-lg font-medium leading-relaxed tracking-wide text-center">
+                Satu portal terintegrasi untuk pengelolaan data laporan, mutu pelayanan, informasi pasien, dan manajemen aset RSUD Lebong.
+            </p>
+        </div>
 
-export default App;
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-10">
+            <!-- SIMAS -->
+            <a href="https://simas-rsud-lebong.web.app" target="_blank" class="group modern-glass card-hover rounded-[2.5rem] p-10 flex flex-col items-center text-center">
+                <div class="icon-container mb-8 mt-6">
+                    <div class="h-20 w-20 rounded-3xl bg-blue-500/10 flex items-center justify-center text-blue-400 group-hover:bg-blue-500 group-hover:text-white transition-all duration-500 shadow-lg text-center">
+                        <svg class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                    </div>
+                </div>
+                <h2 class="serif-font text-3xl text-white mb-4 font-bold group-hover:text-blue-300 transition-colors text-center">SIMAS</h2>
+                <p class="text-sm text-slate-400 font-medium leading-relaxed mb-8 h-12 overflow-hidden uppercase text-[10px] tracking-widest text-center">Manajemen Aset Terpadu</p>
+                <span class="w-full py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-xs font-black uppercase tracking-[0.2em] group-hover:bg-blue-600 group-hover:border-blue-500 transition-all text-center">Akses SIMAS ›</span>
+            </a>
+
+            <!-- SIPAS -->
+            <a href="https://sipas-rsud-lebong-e6a43.web.app" target="_blank" class="group modern-glass card-hover rounded-[2.5rem] p-10 flex flex-col items-center text-center">
+                <div class="icon-container mb-8 mt-6">
+                    <div class="h-20 w-20 rounded-3xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-all duration-500 shadow-lg text-center">
+                        <svg class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1.01 0 01.707.293l5.414 5.414a1 1.01 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    </div>
+                </div>
+                <h2 class="serif-font text-3xl text-white mb-4 font-bold group-hover:text-emerald-300 transition-colors text-center">SIPAS</h2>
+                <p class="text-sm text-slate-400 font-medium leading-relaxed mb-8 h-12 overflow-hidden uppercase text-[10px] tracking-widest text-center">Informasi Pasien & Pelayanan</p>
+                <span class="w-full py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-xs font-black uppercase tracking-[0.2em] group-hover:bg-emerald-600 group-hover:border-emerald-500 transition-all text-center">Akses SIPAS ›</span>
+            </a>
+
+            <!-- PMKP -->
+            <div onclick="UIManager.showView('PMKP_MENU')" class="group modern-glass card-hover rounded-[2.5rem] p-10 flex flex-col items-center text-center cursor-pointer">
+                <div class="icon-container mb-8 mt-6">
+                    <div class="h-20 w-20 rounded-3xl bg-amber-500/10 flex items-center justify-center text-amber-400 group-hover:bg-amber-500 group-hover:text-white transition-all duration-500 shadow-lg text-center text-center">
+                        <svg class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                    </div>
+                </div>
+                <h2 class="serif-font text-3xl text-white mb-4 font-bold group-hover:text-amber-300 transition-colors text-center w-full">PMKP</h2>
+                <p class="text-sm text-slate-400 font-medium leading-relaxed mb-8 h-12 overflow-hidden uppercase text-[10px] tracking-widest text-center">Mutu & Keselamatan Pasien</p>
+                <span class="w-full py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-xs font-black uppercase tracking-[0.2em] group-hover:bg-amber-600 group-hover:border-amber-500 transition-all text-center">AKSES PMKP ›</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- 1.1 MENU SUB-LAYANAN PMKP -->
+    <main id="pmkpMenuView" class="hidden view-transition flex-grow container mx-auto px-6 py-16 lg:py-20 max-w-[1400px]">
+        <div class="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/5 pb-10">
+            <div>
+                <button onclick="UIManager.showView('HOME')" class="text-slate-500 hover:text-white flex items-center text-xs font-black uppercase tracking-[0.3em] group transition-all mb-4">
+                    <svg class="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg> Kembali ke Beranda
+                </button>
+                <h2 class="serif-font text-4xl lg:text-6xl text-white font-black tracking-tight">Layanan Strategis <span class="text-gradient">PMKP</span></h2>
+            </div>
+            <p class="max-w-md text-slate-400 text-sm font-medium text-right italic leading-relaxed text-right">
+                Integrasi instrumen mutu, kepuasan masyarakat, dan keselamatan pasien dalam satu kendali digital.
+            </p>
+        </div>
+        <div id="pmkpSubGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8"></div>
+    </main>
+
+    <!-- 2. FORM IKP -->
+    <main id="ikpView" class="hidden view-transition flex-grow container mx-auto px-6 py-12 max-w-5xl text-left">
+        <div class="mb-12 flex items-center justify-between">
+            <button onclick="UIManager.showView('PMKP_MENU')" class="text-slate-500 hover:text-white flex items-center text-xs font-black uppercase tracking-[0.3em] group transition-all">
+                <svg class="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg> Kembali ke Menu PMKP
+            </button>
+            <h2 id="ikpFormTitle" class="serif-font text-2xl lg:text-4xl text-white font-black uppercase tracking-tight text-gradient">Laporan Insiden (IKP)</h2>
+        </div>
+
+        <form onsubmit="UIManager.handleIKPSubmit(event)" id="ikpForm" class="space-y-10">
+            <input type="hidden" id="editingReportId">
+            <div class="modern-glass rounded-[2.5rem] p-10 lg:p-14 space-y-10">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="space-y-3">
+                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1">Nama Lengkap Pasien</label>
+                        <input type="text" id="namaPasien" required placeholder="Sesuai KTP / RM" class="w-full px-6 py-5 rounded-xl border border-white/10 text-white text-base font-semibold">
+                    </div>
+                    <div class="space-y-3">
+                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1">Nomor Rekam Medis (RM)</label>
+                        <input type="text" id="noRM" required placeholder="Contoh: 12-34-56" class="w-full px-6 py-5 rounded-xl border border-white/10 text-white text-base font-semibold">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="space-y-3">
+                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1">Petugas Pelapor</label>
+                        <input type="text" id="namaPetugas" required placeholder="Nama lengkap Anda" class="w-full px-6 py-5 rounded-xl border border-white/10 text-white text-base font-semibold">
+                    </div>
+                    <div class="space-y-3 relative">
+                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1 text-left block">Unit Lokasi Kejadian</label>
+                        <select id="ruangan" required class="w-full px-6 py-5 rounded-xl border border-white/10 text-white text-base font-semibold appearance-none cursor-pointer"></select>
+                        <div class="absolute right-6 bottom-5 pointer-events-none text-slate-500">
+                            <svg class="h-5 w-5 text-left" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 9l-7 7-7-7" stroke-width="2"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="space-y-3">
+                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1 text-left block">Tanggal Insiden</label>
+                        <input type="date" id="tglKejadian" required class="w-full px-6 py-5 rounded-xl border border-white/10 text-white text-base font-semibold text-left">
+                    </div>
+                    <div class="space-y-3">
+                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1 text-left block">Waktu Kejadian</label>
+                        <div class="flex items-center gap-3">
+                            <div class="flex-grow flex flex-col gap-1 text-center">
+                                <span class="text-[8px] font-black text-slate-500 uppercase tracking-widest text-center">JAM</span>
+                                <select id="jamKejadian" required class="w-full px-4 py-5 rounded-xl border border-white/10 text-white text-center font-bold"></select>
+                            </div>
+                            <span class="text-white font-bold text-xl self-end mb-5">:</span>
+                            <div class="flex-grow flex flex-col gap-1 text-center">
+                                <span class="text-[8px] font-black text-slate-500 uppercase tracking-widest text-center">MENIT</span>
+                                <select id="menitKejadian" required class="w-full px-4 py-5 rounded-xl border border-white/10 text-white text-center font-bold"></select>
+                            </div>
+                            <span class="text-slate-400 font-bold ml-1 self-end mb-6 text-xs tracking-tighter uppercase text-center">WIB</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modern-glass rounded-[2.5rem] p-10 lg:p-14 space-y-10">
+                <div class="flex items-center gap-4 border-b border-white/5 pb-6">
+                    <div class="h-8 w-1 bg-emerald-500 rounded-full"></div>
+                    <h3 class="text-white font-black text-xs uppercase tracking-[0.3em]">Klasifikasi & Kronologi Insiden</h3>
+                </div>
+                <div id="insidenOptions" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"></div>
+                <div class="space-y-3">
+                    <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1 text-left block">Kronologi Lengkap Kejadian</label>
+                    <textarea id="kronologi" rows="6" required placeholder="Deskripsikan detail kejadian secara objektif..." class="w-full px-8 py-6 rounded-3xl border border-white/10 text-white text-base font-medium leading-relaxed"></textarea>
+                </div>
+            </div>
+            
+            <button type="submit" id="btnSubmit" class="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white font-black py-7 rounded-3xl text-sm uppercase tracking-[0.4em] shadow-2xl hover:scale-[1.01] active:scale-95 transition-all text-center">Simpan Laporan ke Sistem</button>
+        </form>
+    </main>
+
+    <!-- 3. DATABASE ADMIN -->
+    <main id="adminDashboard" class="hidden view-transition flex-grow container mx-auto px-6 py-12 lg:py-16 max-w-[1500px]">
+        <div class="mb-12 flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+            <div>
+                <button onclick="UIManager.showView('HOME')" class="text-slate-500 hover:text-white flex items-center text-xs font-black uppercase tracking-[0.3em] mb-4 group transition-all">
+                    <svg class="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg> Keluar Panel Admin
+                </button>
+                <h2 class="serif-font text-4xl lg:text-6xl text-white font-black tracking-tight">Database <span class="text-gradient">Laporan IKP</span></h2>
+            </div>
+            <div class="flex items-center gap-5">
+                <button onclick="UIManager.showView('ADMIN_SETTINGS')" class="bg-white/5 hover:bg-white/10 border border-white/10 px-8 py-4 rounded-2xl flex items-center text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg text-center">
+                    <svg class="h-5 w-5 mr-2.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Konfigurasi
+                </button>
+                <div class="bg-blue-600/10 border border-blue-600/20 px-8 py-4 rounded-2xl min-w-[120px] text-center shadow-xl text-center">
+                    <span class="text-[9px] font-black text-blue-400 uppercase block mb-0.5 tracking-widest text-center">Total Data</span>
+                    <span id="reportCount" class="text-2xl font-black text-white text-center">0</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="modern-glass rounded-[2.5rem] overflow-hidden shadow-2xl border-white/5">
+            <div class="overflow-x-auto custom-scrollbar text-left">
+                <table class="w-full text-left border-collapse min-w-[1100px]">
+                    <thead>
+                        <tr class="bg-white/5 border-b border-white/5 text-[10px] font-black text-blue-400 uppercase tracking-[0.3em]">
+                            <th class="px-10 py-7">Waktu Insiden</th>
+                            <th class="px-10 py-7">Identitas Pasien</th>
+                            <th class="px-10 py-7">Unit Pelayanan</th>
+                            <th class="px-10 py-7 text-center">Klasifikasi</th>
+                            <th class="px-10 py-7 text-right">Tindakan</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reportTableBody" class="text-sm font-medium text-slate-200"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- 4. KONFIGURASI ADMIN -->
+    <main id="adminSettings" class="hidden view-transition flex-grow container mx-auto px-6 py-16 max-w-[1400px]">
+        <div class="mb-12">
+            <button onclick="UIManager.showView('ADMIN_DASHBOARD')" class="text-slate-500 hover:text-white flex items-center text-xs font-black uppercase tracking-[0.3em] mb-4 group transition-all">
+                <svg class="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg> Kembali ke Database
+            </button>
+            <h2 class="serif-font text-4xl lg:text-5xl text-white font-black tracking-tight text-center">Konfigurasi Sistem</h2>
+        </div>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <div class="modern-glass rounded-[2.5rem] p-10 lg:p-12 shadow-2xl text-left">
+                <h3 class="text-blue-400 font-black text-xs uppercase mb-10 border-b border-white/5 pb-6 tracking-[0.3em]">Manajemen Unit Pelayanan</h3>
+                <div class="flex gap-4 mb-10">
+                    <input type="text" id="newRoomName" placeholder="Ketik nama unit baru..." class="flex-grow rounded-xl px-6 py-4 text-sm font-semibold border border-white/10 text-white">
+                    <button onclick="UIManager.addRoom()" class="bg-blue-600 hover:bg-blue-500 text-white px-8 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all text-center">Tambah</button>
+                </div>
+                <div id="roomList" class="space-y-4 max-h-[500px] overflow-y-auto custom-scrollbar pr-3"></div>
+            </div>
+            
+            <div class="space-y-10">
+                <div class="modern-glass rounded-[2.5rem] p-10 lg:p-12 shadow-2xl text-left">
+                    <h3 class="text-emerald-400 font-black text-xs uppercase mb-8 border-b border-white/5 pb-6 tracking-[0.3em]">Update Akun Admin</h3>
+                    <form onsubmit="UIManager.updateAuthConfig(event, 'ADMIN')" class="space-y-6">
+                        <input type="text" id="newAdminUser" required class="w-full rounded-xl px-6 py-4 text-sm font-semibold border border-white/10 text-white">
+                        <input type="password" id="newAdminPass" required placeholder="Password baru" class="w-full rounded-xl px-6 py-4 text-sm font-semibold border border-white/10 text-white">
+                        <button type="submit" class="w-full bg-white text-slate-900 font-black py-4 rounded-xl text-[10px] uppercase tracking-[0.2em] shadow-xl hover:bg-slate-100 transition-all text-center">Simpan Akun Admin</button>
+                    </form>
+                </div>
+                <div class="modern-glass rounded-[2.5rem] p-10 lg:p-12 shadow-2xl text-left">
+                    <h3 class="text-blue-400 font-black text-xs uppercase mb-8 border-b border-white/5 pb-6 tracking-[0.3em]">Update Akun Petugas</h3>
+                    <form onsubmit="UIManager.updateAuthConfig(event, 'STAFF')" class="space-y-6">
+                        <input type="text" id="newStaffUser" required class="w-full rounded-xl px-6 py-4 text-sm font-semibold border border-white/10 text-white">
+                        <input type="password" id="newStaffPass" required placeholder="Password baru" class="w-full rounded-xl px-6 py-4 text-sm font-semibold border border-white/10 text-white">
+                        <button type="submit" class="w-full bg-blue-600 text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-[0.2em] shadow-xl hover:bg-blue-500 transition-all text-center">Simpan Akun Petugas</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <div id="loginModal" class="fixed inset-0 z-[200] hidden flex items-center justify-center p-6 backdrop-blur-3xl bg-slate-900/60">
+        <div class="modern-glass p-12 lg:p-16 rounded-[3.5rem] w-full max-sm:max-w-xs max-w-sm shadow-2xl text-center">
+            <button onclick="UIManager.closeLogin()" class="absolute top-10 right-10 text-slate-500 hover:text-white transition-all text-center">✕</button>
+            <div class="mb-12 text-center text-center">
+                <div class="h-20 w-20 bg-blue-500/10 rounded-3xl flex items-center justify-center mx-auto mb-6 text-blue-400 text-center">
+                    <svg class="h-10 w-10 text-center" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                </div>
+                <h3 class="serif-font text-3xl font-black mb-2 uppercase tracking-tight text-white text-center">Otorisasi</h3>
+                <p class="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] text-center">Keamanan Terverifikasi</p>
+            </div>
+            <form onsubmit="UIManager.handleLogin(event)" class="space-y-6">
+                <input type="text" id="loginUsername" placeholder="Username" required class="w-full rounded-2xl px-6 py-4 text-base font-semibold text-center border border-white/10 text-white">
+                <input type="password" id="loginPassword" placeholder="Kode Akses" required class="w-full rounded-2xl px-6 py-4 text-base font-semibold text-center border border-white/10 text-white">
+                <button type="submit" class="w-full bg-white text-slate-900 font-black py-4 rounded-2xl text-xs uppercase tracking-[0.4em] shadow-xl hover:bg-blue-50 active:scale-95 transition-all text-center">Verifikasi Masuk</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="fixed inset-0 z-[250] hidden flex items-center justify-center p-6 backdrop-blur-2xl bg-slate-900/60">
+        <div class="modern-glass p-12 rounded-[3rem] w-full max-sm:max-w-xs max-w-sm text-center border-red-500/20 shadow-2xl">
+            <h3 class="font-black mb-4 uppercase text-lg tracking-widest text-white text-center">Konfirmasi Hapus</h3>
+            <p id="confirmMessage" class="text-sm text-slate-300 mb-10 font-medium leading-relaxed italic text-center"></p>
+            <div class="grid grid-cols-2 gap-4">
+                <button id="confirmBtn" class="bg-red-600 text-white py-4 rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-red-500 transition-all text-center">Hapus</button>
+                <button onclick="UIManager.closeConfirm()" class="bg-white/5 text-white py-4 rounded-2xl text-xs font-black uppercase transition-all text-center">Batal</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="editRoomModal" class="fixed inset-0 z-[150] hidden flex items-center justify-center p-6 backdrop-blur-2xl bg-slate-900/50 text-white text-center">
+        <div class="modern-glass p-12 rounded-[3.5rem] w-full max-sm:max-w-xs max-w-sm border-blue-500/10 shadow-2xl text-center">
+            <h3 class="font-black mb-8 uppercase text-sm tracking-[0.5em] opacity-90 text-blue-300 text-center">Edit Nama Unit</h3>
+            <input type="text" id="editRoomInput" class="w-full rounded-2xl px-6 py-6 text-xl mb-10 font-bold text-center text-white border border-white/10 outline-none text-center">
+            <div class="grid grid-cols-2 gap-5">
+                <button id="saveEditBtn" class="bg-blue-600 text-white py-5 rounded-2xl text-sm font-black uppercase active:scale-95 shadow-lg text-center">Update</button>
+                <button onclick="document.getElementById('editRoomModal').style.display='none'" class="bg-white/5 text-white py-5 rounded-2xl text-sm font-black uppercase transition-all text-center">Batal</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="notificationBox" class="hidden fixed bottom-10 right-1/2 translate-x-1/2 md:right-10 md:translate-x-0 z-[300] bg-white text-slate-900 px-8 py-5 rounded-2xl shadow-2xl flex items-center gap-5 border border-white/20">
+        <div id="notifIcon" class="h-6 w-6 text-center"></div>
+        <span id="notifMessage" class="text-xs font-black uppercase tracking-[0.2em] text-center text-center"></span>
+    </div>
+
+    <!-- Footer -->
+    <footer class="mt-auto relative overflow-hidden text-center">
+        <div class="h-[2px] w-full bg-gradient-to-r from-transparent via-blue-500/30 to-transparent"></div>
+        <div class="bg-[#010413]/80 backdrop-blur-3xl pt-20 pb-12 px-6 lg:px-16 text-center">
+            <div class="max-w-[1200px] mx-auto text-center">
+                <div class="mb-12 text-center">
+                    <h4 class="serif-font text-2xl lg:text-3xl font-black text-white italic tracking-wide mb-2 text-center">Setulus Hati Kami Melayani</h4>
+                    <div class="w-20 h-1 bg-blue-600 mx-auto rounded-full mt-6 opacity-80 shadow-[0_0_15px_rgba(37,99,235,0.5)]"></div>
+                </div>
+                <div class="grid grid-cols-1 gap-1 my-10 text-center">
+                    <p class="text-[10px] lg:text-[11px] font-black uppercase tracking-[0.6em] text-slate-500 mb-2 text-center text-center">Dikelola Oleh:</p>
+                    <p class="text-base lg:text-lg font-extrabold text-white tracking-[0.1em] uppercase text-center text-center">Tim Teknologi Informasi</p>
+                    <p class="text-sm lg:text-base font-bold text-blue-400/90 tracking-wide text-center text-center">Rumah Sakit Umum Daerah Lebong</p>
+                </div>
+            </div>
+        </div>
+        <div class="bg-black/40 border-t border-white/5 py-8 text-center px-6 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] text-center">
+            © 2026 Sistem Informasi Terintegrasi RSUD Lebong <span class="mx-2">•</span> v1.0.0
+        </div>
+    </footer>
+
+    <script>
+        window.UIManager = {
+            currentView: 'HOME',
+            showView: (view) => {
+                const views = { HOME: 'mainDashboard', PMKP_MENU: 'pmkpMenuView', IKP: 'ikpView', ADMIN_DASHBOARD: 'adminDashboard', ADMIN_SETTINGS: 'adminSettings' };
+                Object.values(views).forEach(id => { 
+                    const el = document.getElementById(id); 
+                    if(el) { el.classList.add('hidden'); el.style.display = 'none'; } 
+                });
+                const target = document.getElementById(views[view]);
+                if(target) { target.classList.remove('hidden'); target.style.display = 'block'; }
+                window.UIManager.currentView = view;
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                
+                if (view === 'PMKP_MENU') window.UIManager.renderPMKPGrid();
+                if (view === 'IKP' && !document.getElementById('editingReportId').value) window.UIManager.initIKPForm();
+                if (view === 'ADMIN_DASHBOARD') window.UIManager.renderAdminTable();
+                if (view === 'ADMIN_SETTINGS') window.UIManager.renderSettingsRoomList();
+            },
+            notify: (msg, success = true) => {
+                const box = document.getElementById('notificationBox');
+                const icon = document.getElementById('notifIcon');
+                document.getElementById('notifMessage').innerText = msg;
+                icon.innerHTML = success ? `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-emerald-600" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg>` : `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-red-600" stroke-width="4"><path d="M6 18L18 6M6 6l12 12"/></svg>`;
+                box.classList.remove('hidden'); box.style.display = 'flex';
+                setTimeout(() => { box.classList.add('hidden'); box.style.display = 'none'; }, 3000);
+            },
+            openLogin: () => { document.getElementById('loginModal').classList.remove('hidden'); document.getElementById('loginModal').style.display = 'flex'; },
+            closeLogin: () => { document.getElementById('loginModal').classList.add('hidden'); document.getElementById('loginModal').style.display = 'none'; },
+            closeConfirm: () => { document.getElementById('confirmModal').classList.add('hidden'); document.getElementById('confirmModal').style.display = 'none'; },
+            handleLogin: (e) => {
+                e.preventDefault();
+                const role = window.AuthManager.checkLogin(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
+                if (role === 'ADMIN') { 
+                    window.UIManager.closeLogin(); 
+                    window.UIManager.showView('ADMIN_DASHBOARD'); 
+                    window.UIManager.notify("Akses Administrator Diberikan"); 
+                }
+                else if (role === 'STAFF') { 
+                    window.UIManager.closeLogin(); 
+                    window.UIManager.showView('IKP'); 
+                    window.UIManager.notify("Akses Petugas Diberikan"); 
+                }
+                else { window.UIManager.notify("Kredensial Salah", false); }
+                e.target.reset();
+            },
+            renderPMKPGrid: () => {
+                const grid = document.getElementById('pmkpSubGrid');
+                const items = [
+                    { title: 'Indikator Mutu', desc: 'Pemantauan mutu layanan RS secara berkala.', link: 'https://biolink.info//muturslebong', type: 'Eksternal' },
+                    { title: 'SIMMUTU', desc: 'Sistem Informasi Manajemen Mutu Terpadu internal.', link: 'http://172.31.1.2/simmutu', type: 'Internal' },
+                    { title: 'Survey Kepuasan', desc: 'Survey Kepuasan Masyarakat (SKM) digital.', link: 'https://rsudlebong.fillout.com/skm', type: 'Survey' },
+                    { title: 'Saluran Pengaduan', desc: 'Formulir resmi pengaduan layanan pasien.', link: 'https://rsudlebong.fillout.com/pengaduan', type: 'Formulir' },
+                    { title: 'Survey Budaya', desc: 'Budaya Keselamatan Pasien rumah sakit.', link: 'https://rsudlebong.fillout.com//surveibudaya', type: 'Survey' },
+                    { title: 'Pelaporan IKP', desc: 'Sistem Pelaporan Insiden Keselamatan Pasien.', action: 'login', type: 'Sistem' }
+                ];
+                grid.innerHTML = items.map(i => `
+                    <div ${i.action ? 'onclick="UIManager.openLogin()"' : `onclick="window.open('${i.link}', '_blank')"`} class="group modern-glass rounded-[2rem] p-8 card-hover cursor-pointer flex flex-col h-full border-white/5 text-left">
+                        <div class="flex justify-between items-start mb-6 text-left">
+                            <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest text-left">${i.type}</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mb-3 group-hover:text-blue-300 transition-colors uppercase tracking-tight text-left text-left">${i.title}</h3>
+                        <p class="text-xs text-slate-400 leading-relaxed mb-8 h-10 overflow-hidden font-medium text-left text-left">${i.desc}</p>
+                        <div class="mt-auto flex items-center text-blue-500 text-[10px] font-black uppercase tracking-[0.2em] group-hover:translate-x-2 transition-transform duration-300 text-left">
+                            Buka Layanan <svg class="h-3 w-3 ml-2 text-left" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M9 5l7 7-7 7"/></svg>
+                        </div>
+                    </div>
+                `).join('');
+            },
+            syncUI: () => {
+                const s = document.getElementById('ruangan');
+                if (s) { const cur = s.value; s.innerHTML = '<option value="" disabled selected>Pilih Unit Pelayanan</option>'; [...window.AppState.rooms].sort().forEach(r => s.add(new Option(r, r))); if(cur) s.value = cur; }
+                const au = document.getElementById('newAdminUser'); const su = document.getElementById('newStaffUser');
+                if (au) au.value = window.AppState.authConfig.adminUser; if (su) su.value = window.AppState.authConfig.staffUser;
+            },
+            initIKPForm: (editData = null) => {
+                const jS = document.getElementById('jamKejadian'); const mS = document.getElementById('menitKejadian');
+                jS.innerHTML = ''; mS.innerHTML = '';
+                for(let i=0; i<24; i++) jS.add(new Option(i.toString().padStart(2, '0'), i.toString().padStart(2, '0')));
+                for(let i=0; i<60; i++) mS.add(new Option(i.toString().padStart(2, '0'), i.toString().padStart(2, '0')));
+                
+                // DATA RINCIAN LENGKAP JENIS INSIDEN
+                const types = [ 
+                    { 
+                        val: 'KTD', 
+                        label: 'KTD', 
+                        desc: 'Kejadian Tidak Diharapkan (KTD): Insiden yang mengakibatkan cedera permanen, cacat, atau kematian pada pasien akibat tindakan medis/non-medis, bukan karena perjalanan penyakit dasarnya.' 
+                    }, 
+                    { 
+                        val: 'KNC', 
+                        label: 'KNC', 
+                        desc: 'Kejadian Nyaris Cedera (KNC): Terjadinya kesalahan yang berpotensi mencederai pasien, namun kesalahan tersebut dapat segera diketahui sebelum terpapar ke pasien (nyaris celaka).' 
+                    }, 
+                    { 
+                        val: 'KTC', 
+                        label: 'KTC', 
+                        desc: 'Kejadian Tidak Cedera (KTC): Insiden yang sudah terpapar/terkena langsung ke pasien, namun pasien beruntung tidak mengalami cedera yang nyata atau dampak medis yang signifikan.' 
+                    }, 
+                    { 
+                        val: 'KPC', 
+                        label: 'KPC', 
+                        desc: 'Kondisi Potensial Cedera (KPC): Situasi atau kondisi lingkungan kerja yang sangat berpotensi menimbulkan insiden bahaya bagi pasien (Contoh: lantai licin, obat kadaluarsa tetap di rak).' 
+                    }, 
+                    { 
+                        val: 'SENTINEL', 
+                        label: 'SENTINEL', 
+                        desc: 'SENTINEL: Kejadian luar biasa yang mengakibatkan kematian mendadak atau cedera fisik/psikologis permanen yang sangat serius pada pasien yang tidak terkait dengan penyakitnya.', 
+                        red: true 
+                    } 
+                ];
+
+                document.getElementById('insidenOptions').innerHTML = types.map(t => `<label class="group relative flex flex-col p-6 modern-glass rounded-2xl cursor-pointer hover:bg-white/10 border-white/5 transition-all text-white text-left"><div class="flex items-center gap-3 mb-4 text-left"><input type="radio" name="jenisInsiden" value="${t.val}" required class="w-5 h-5 accent-blue-500 text-left"><span class="text-base font-black uppercase tracking-widest text-left ${t.red ? 'text-red-400' : 'text-blue-300'} text-left">${t.label}</span></div><p class="text-[10px] text-slate-400 italic leading-snug font-semibold border-t border-white/5 pt-3 text-left">${t.desc}</p></label>`).join('');
+                
+                window.UIManager.syncUI();
+                if(editData) { 
+                    document.getElementById('editingReportId').value = editData.id; 
+                    document.getElementById('namaPasien').value = editData.namaPasien; 
+                    document.getElementById('noRM').value = editData.noRM; 
+                    document.getElementById('namaPetugas').value = editData.namaPetugas; 
+                    document.getElementById('ruangan').value = editData.ruangan; 
+                    document.getElementById('tglKejadian').value = editData.tgl; 
+                    const [h, m] = editData.waktu.split(':'); 
+                    document.getElementById('jamKejadian').value = h; 
+                    document.getElementById('menitKejadian').value = m; 
+                    document.getElementById('kronologi').value = editData.kronologi; 
+                    const radio = document.querySelector(`input[name="jenisInsiden"][value="${editData.jenis}"]`); 
+                    if(radio) radio.checked = true; 
+                    document.getElementById('ikpFormTitle').innerText = "Koreksi Laporan";
+                    document.getElementById('btnSubmit').innerText = "Simpan Perubahan";
+                } 
+                else { 
+                    document.getElementById('editingReportId').value = ''; 
+                    document.getElementById('ikpForm').reset(); 
+                    document.getElementById('ikpFormTitle').innerText = "Laporan Insiden (IKP)";
+                    document.getElementById('btnSubmit').innerText = "Simpan Laporan ke Sistem";
+                }
+            },
+            handleIKPSubmit: async (e) => {
+                e.preventDefault();
+                const btn = document.getElementById('btnSubmit'); const editId = document.getElementById('editingReportId').value;
+                const data = { namaPasien: document.getElementById('namaPasien').value, noRM: document.getElementById('noRM').value, namaPetugas: document.getElementById('namaPetugas').value, ruangan: document.getElementById('ruangan').value, tgl: document.getElementById('tglKejadian').value, waktu: `${document.getElementById('jamKejadian').value}:${document.getElementById('menitKejadian').value}`, jenis: e.target.querySelector('input[name="jenisInsiden"]:checked').value, kronologi: document.getElementById('kronologi').value };
+                btn.disabled = true; btn.innerText = "Memproses...";
+                let success = editId ? await window.DataManager.updateReport(editId, data) : await window.DataManager.addReport(data);
+                if(success) { window.UIManager.notify("Data Berhasil Disimpan!"); window.UIManager.showView('HOME'); e.target.reset(); } else { window.UIManager.notify("Gagal Menyimpan Data", false); }
+                btn.disabled = false; btn.innerText = "Simpan Laporan ke Sistem";
+            },
+            renderAdminTable: () => {
+                const b = document.getElementById('reportTableBody'); if (!b) return;
+                const reports = [...window.AppState.reports].sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+                document.getElementById('reportCount').innerText = reports.length;
+                b.innerHTML = reports.map((r, i) => `<tr class="border-b border-white/5 hover:bg-white/5 transition-all group text-left"><td class="px-10 py-7 font-bold text-white text-base text-left">${r.tgl}<br><span class="text-[10px] text-blue-400 font-black uppercase tracking-widest text-left">${r.waktu} WIB</span></td><td class="px-10 py-7 font-black text-white uppercase tracking-tight text-left">${r.namaPasien}<br><span class="text-[10px] text-emerald-400 font-bold text-left">RM: ${r.noRM}</span></td><td class="px-10 py-7 font-black text-slate-100 uppercase tracking-widest text-xs text-left">${r.ruangan}<br><span class="text-[10px] text-slate-500 font-bold lowercase italic text-left">oleh: ${r.namaPetugas}</span></td><td class="px-10 py-7 text-center"><span class="px-5 py-2 rounded-xl text-[10px] font-black uppercase shadow-xl border border-white/5 text-center ${window.UIManager.getBadgeStyle(r.jenis)} text-center">${r.jenis}</span></td><td class="px-10 py-7 text-right"><div class="flex justify-end gap-2 text-right"><button onclick="UIManager.openEditReport(${i})" class="bg-blue-500/10 text-blue-400 p-3 rounded-xl border border-blue-500/20 hover:bg-blue-600 hover:text-white transition-all text-right"><svg class="h-4 w-4 text-right" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button><button onclick="UIManager.downloadPDF(${i})" class="bg-emerald-500/10 text-emerald-400 px-4 py-2 rounded-xl font-black text-[10px] border border-emerald-500/20 hover:bg-emerald-600 hover:text-white text-right">PDF</button><button onclick="UIManager.deleteReportWithConfirm(${i})" class="bg-red-500/10 text-red-400 p-3 rounded-xl border border-red-500/20 hover:bg-red-600 hover:text-white transition-all text-right"><svg class="h-4 w-4 text-right text-right" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1.01 0 00-1-1h-4a1 1.01 0 00-1 1v3M4 7h16"/></svg></button></div></td></tr>`).join('');
+            },
+            getBadgeStyle: (j) => { const map = { SENTINEL: 'bg-red-500/20 text-red-300', KTD: 'bg-orange-500/20 text-orange-300', KNC: 'bg-blue-500/20 text-blue-300', KTC: 'bg-emerald-500/20 text-emerald-300' }; return map[j] || 'bg-slate-500/20 text-slate-300'; },
+            renderSettingsRoomList: () => { const l = document.getElementById('roomList'); if (!l) return; l.innerHTML = [...window.AppState.rooms].sort().map(r => `<div class="flex items-center justify-between p-6 bg-white/5 border border-white/5 rounded-2xl group hover:border-blue-500/30 transition-all text-left"><span class="text-sm font-bold tracking-wide text-white uppercase text-left">${r}</span><div class="flex gap-3 text-right text-right"><button onclick="UIManager.openEditRoom('${r}')" class="bg-blue-500/10 text-blue-400 p-3 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-lg border border-blue-500/10 text-right"><svg class="h-4 w-4 text-right" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button><button onclick="UIManager.deleteRoomWithConfirm('${r}')" class="bg-red-500/10 text-red-400 p-3 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-lg border border-red-500/10 text-right"><svg class="h-4 w-4 text-right text-right" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1.01 0 00-1-1h-4a1 1.01 0 00-1 1v3M4 7h16"/></svg></button></div></div>`).join(''); },
+            openEditRoom: (n) => {
+                const modal = document.getElementById('editRoomModal'); const input = document.getElementById('editRoomInput');
+                input.value = n; modal.style.display = 'flex'; modal.classList.remove('hidden');
+                document.getElementById('saveEditBtn').onclick = async () => { const newVal = input.value.trim(); if(newVal && newVal !== n) { if(await window.DataManager.updateSettings({ rooms: window.AppState.rooms.map(r => r === n ? newVal : r) })) { modal.style.display = 'none'; window.UIManager.notify("Nama Unit Diperbarui"); } } else { modal.style.display = 'none'; } };
+            },
+            addRoom: async () => { const n = document.getElementById('newRoomName').value.trim(); if (n && !window.AppState.rooms.includes(n)) { if(await window.DataManager.updateSettings({ rooms: [...window.AppState.rooms, n] })) { document.getElementById('newRoomName').value = ''; window.UIManager.notify("Unit Berhasil Ditambah"); } } },
+            deleteRoomWithConfirm: (n) => { const modal = document.getElementById('confirmModal'); document.getElementById('confirmMessage').innerHTML = `Hapus unit pelayanan <br><b class="text-white uppercase tracking-widest text-lg">${n}</b>?`; modal.style.display = 'flex'; modal.classList.remove('hidden'); document.getElementById('confirmBtn').onclick = async () => { if(await window.DataManager.updateSettings({ rooms: window.AppState.rooms.filter(r => r !== n) })) { window.UIManager.closeConfirm(); window.UIManager.notify("Unit Telah Dihapus"); } }; },
+            updateAuthConfig: async (e, type) => {
+                e.preventDefault(); let newAuth = { ...window.AppState.authConfig };
+                if (type === 'ADMIN') { newAuth.adminUser = document.getElementById('newAdminUser').value.trim(); newAuth.adminPass = document.getElementById('newAdminPass').value.trim(); } 
+                else { newAuth.staffUser = document.getElementById('newStaffUser').value.trim(); newAuth.staffPass = document.getElementById('newStaffPass').value.trim(); }
+                if(await window.DataManager.updateSettings({ auth: newAuth })) window.UIManager.notify(`Keamanan ${type} Diperbarui`);
+            },
+            downloadPDF: (i) => {
+                const r = [...window.AppState.reports].sort((a,b) => b.createdAt.localeCompare(a.createdAt))[i];
+                const { jsPDF } = window.jspdf; const doc = new jsPDF();
+                const today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                
+                doc.setFont("helvetica", "bold").setFontSize(13).text("PEMERINTAH KABUPATEN LEBONG", 105, 15, { align: "center" });
+                doc.setFontSize(16).text("RUMAH SAKIT UMUM DAERAH", 105, 23, { align: "center" });
+                doc.setFont("helvetica", "normal").setFontSize(9).text("Jl. Muara Aman-Curup Desa Muning Agung Kec. Lebong Sakti Kab. Lebong 39163", 105, 30, { align: "center" });
+                doc.text("Email : rsudlebong20@gmail.com", 105, 35, { align: "center" });
+                
+                doc.setLineWidth(0.8).line(20, 39, 190, 39);
+                doc.setLineWidth(0.2).line(20, 40, 190, 40);
+                
+                doc.setFont("helvetica", "bold").setFontSize(11).text("LAPORAN INSIDEN KESELAMATAN PASIEN (IKP)", 105, 50, { align: "center" });
+                
+                doc.autoTable({ 
+                    startY: 58, 
+                    head: [['Variabel Laporan', 'Detail Data Tercatat']], 
+                    body: [
+                        ['Nama Lengkap Pasien', r.namaPasien], 
+                        ['Nomor Rekam Medis', r.noRM], 
+                        ['Petugas Pelapor', r.namaPetugas], 
+                        ['Unit / Ruangan', r.ruangan], 
+                        ['Tanggal Kejadian', r.tgl], 
+                        ['Waktu Kejadian', `${r.waktu} WIB`], 
+                        ['Klasifikasi Insiden', r.jenis], 
+                        ['Kronologi Kejadian', r.kronologi]
+                    ], 
+                    theme: 'grid', 
+                    styles: { fontSize: 10, cellPadding: 6, lineColor: [40, 40, 40], lineWidth: 0.2, valign: 'middle' }, 
+                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', lineWidth: 0.4, lineColor: [0, 0, 0] }, 
+                    columnStyles: { 0: { fontStyle: 'bold', width: 50, fillColor: [245, 247, 250] }, 1: { width: 'auto' } }
+                });
+                
+                const finalY = doc.lastAutoTable.finalY + 20;
+                doc.setFontSize(10).setFont("helvetica", "normal").text(`Lebong, ${today}`, 160, finalY, { align: "center" });
+                doc.text("Petugas Pelapor,", 160, finalY + 6, { align: "center" });
+                doc.setFont("helvetica", "bold").text(`( ${r.namaPetugas} )`, 160, finalY + 30, { align: "center" });
+                
+                doc.save(`IKP_LEBONG_${r.namaPasien.replace(/\s+/g, '_')}.pdf`);
+            }
+        };
+
+        setInterval(() => {
+            const d = document.getElementById('live-time');
+            if (d) {
+                const n = new Date();
+                const timeStr = `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}:${n.getSeconds().toString().padStart(2, '0')}`;
+                const dateStr = n.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                d.innerHTML = `Waktu Server Sistem <span class="text-blue-400 font-bold mx-2">${timeStr}</span> <span class="opacity-20 mx-2">|</span> ${dateStr}`;
+            }
+        }, 1000);
+        
+        window.onload = () => { window.UIManager.syncUI(); window.UIManager.showView('HOME'); };
+    </script>
+</body>
+</html>
