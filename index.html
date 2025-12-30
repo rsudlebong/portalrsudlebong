@@ -1,0 +1,1434 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  LayoutDashboard, Siren, Stethoscope, ClipboardList,
+  LogIn, LogOut, ArrowLeft, ExternalLink, CheckCircle2,
+  AlertTriangle, XCircle, Activity, UserCircle, Users,
+  Trash2, Edit, ChevronRight, BarChart3, PackagePlus,
+  Building, KeyRound, ShieldCheck, FileSpreadsheet,
+  FileDown, Info, X, Zap, Home, AlertOctagon, Filter,
+  MessageSquare, Send, Loader2, Bot, Sparkles, ChevronDown
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, User } from 'firebase/auth';
+import {
+  getFirestore, doc, collection, query, onSnapshot,
+  addDoc, updateDoc, deleteDoc, getDocs, setDoc,
+  Timestamp, writeBatch, setLogLevel, where
+} from 'firebase/firestore';
+
+// =======================================================
+// >>> MODE LOKAL <<<
+// Atur ini ke TRUE untuk memaksa aplikasi menggunakan data MOCK lokal
+// dan menonaktifkan semua koneksi ke Firebase (termasuk penyimpanan).
+const USE_LOCAL_MOCK_MODE = true; 
+// =======================================================
+
+// --- FUNGSI BANTU FIREBASE GLOBAL & KONFIGURASI ---
+// Ketika berjalan lokal, variabel ini akan menjadi undefined, sehingga kita set default
+const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+// FIX: Replace slashes/dots in AppId so it acts as ONE segment path part for Firestore
+const safeAppId = rawAppId.replace(/\//g, '_').replace(/\./g, '-'); 
+// Menggunakan objek kosong jika config tidak ada, ini memicu Local Mock Mode.
+const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : {}; 
+
+// Firestore path constants
+// Ini akan menjadi 4 segmen: artifacts / safeAppId / public / data
+const BASE_PATH_SEGMENTS = ['artifacts', safeAppId, 'public', 'data'];
+
+const ROOMS_COLLECTION = 'rooms';
+const INVENTORY_COLLECTION = 'inventory';
+const REPORTS_COLLECTION = 'reports';
+
+// --- FUNGSI BANTU TANGGAL (MEMPERBAIKI MASALAH ZONA WAKTU) ---
+const getLocalDate = (iso = false) => {
+  const offset = new Date().getTimezoneOffset() * 60000;
+  const date = new Date(Date.now() - offset);
+  if (iso) return date.toISOString();
+  return date.toISOString().slice(0, 10);
+};
+
+// --- GAYA CSS COLORFUL & MODERN ---
+const COLORFUL_THEME = `
+  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+  
+  body { 
+    font-family: 'Nunito', sans-serif; 
+    background-color: #f0f9ff; 
+    color: #1e293b;
+    overflow: hidden; 
+  }
+
+  /* --- LATAR BELAKANG DASAR --- */
+  .colorful-bg {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(135deg, #dbeafe 0%, #e0e7ff 50%, #f3e8ff 100%);
+    z-index: -2;
+  }
+  
+  .colorful-bg::before {
+    content: '';
+    position: absolute;
+    top: -10%; right: -10%;
+    width: 50vw; height: 50vw;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+    border-radius: 50%;
+    animation: float 10s infinite alternate;
+  }
+  .colorful-bg::after {
+    content: '';
+    position: absolute;
+    bottom: -10%; left: -10%;
+    width: 40vw; height: 40vw;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+    border-radius: 50%;
+    animation: float 12s infinite alternate-reverse;
+  }
+
+  @keyframes float {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(20px, 20px); }
+  }
+
+  /* --- KARTU --- */
+  .modern-card, .card-white {
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+  }
+  .card-base {
+    border-radius: 20px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  }
+
+  /* --- TOMBOL --- */
+  .btn-menu {
+    transition: all 0.2s;
+    border: none;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-menu:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  
+  .btn-blue { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
+  .btn-violet { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; }
+  .btn-emerald { background: linear-gradient(135deg, #10b981, #059669); color: white; }
+  .btn-orange { background: linear-gradient(135deg, #f97316, #ea580c); color: white; }
+  .btn-slate { background: linear-gradient(135deg, #64748b, #475569); color: white; }
+  .btn-slate:hover { background: linear-gradient(135deg, #475569, #334155); }
+  
+  .btn-ghost {
+    background: #f1f5f9;
+    color: #64748b;
+  }
+  .btn-ghost:hover {
+    background: #e2e8f0;
+    color: #334155;
+  }
+
+  /* --- TABEL (DENGAN WARNA SELANG SELING) --- */
+  .color-table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 16px; }
+  .color-table th { 
+    background: #059669; /* HIJAU KESEHATAN (Emerald 600) */
+    color: #ffffff;
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    padding: 16px;
+    text-align: left;
+    letter-spacing: 0.05em;
+  }
+  .color-table td { 
+    padding: 14px 16px;
+    color: #334155;
+    font-weight: 600;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  
+  /* WARNA SELANG SELING (ZEBRA STRIPING) */
+  .color-table tbody tr:nth-child(odd) td { background-color: #ffffff; }
+  .color-table tbody tr:nth-child(even) td { background-color: #ecfdf5; }
+
+  /* EFEK HOVER */
+  .color-table tr:hover td { 
+    background-color: #d1fae5 !important; 
+    cursor: default;
+  }
+  .color-table tr:last-child td { border-bottom: none; }
+
+  /* --- INPUTS --- */
+  .modern-input {
+    background: #f8fafc;
+    border: 2px solid #e2e8f0;
+    transition: all 0.2s;
+    color: #0f172a;
+  }
+  .modern-input:focus {
+    background: #fff;
+    border-color: #3b82f6; 
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+    outline: none;
+  }
+  
+  /* --- TRANSPARENT INPUT (UNTUK KARTU BERWARNA PENUH) --- */
+  .glass-input {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    transition: all 0.2s;
+  }
+  .glass-input::placeholder { color: rgba(255, 255, 255, 0.7); }
+  .glass-input:focus {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: white;
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.1);
+  }
+  /* Memperbaiki Warna Opsi Select pada Input Kaca */
+  .glass-input option { color: #334155; background: white; }
+
+  /* --- ANIMASI MODAL --- */
+  .modal-overlay { animation: fadeIn 0.2s ease-out; }
+  .modal-content { animation: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+  
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes scaleUp { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  /* --- SCROLLBAR --- */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
+`;
+
+// --- DATA AWAL (MOCK DATA) ---
+// Data ini digunakan jika berjalan di Local Mock Mode
+const INITIAL_ROOMS_MOCK = [
+  { id: 'mock1', name: "IGD", password: "123" },
+  { id: 'mock2', name: "ICU", password: "123" },
+  { id: 'mock3', name: "Mawar", password: "123" },
+  { id: 'mock4', name: "Anggrek", password: "123" },
+];
+
+const INITIAL_INVENTORY_MOCK = [
+  { id: 1, name: "Patient Monitor", merk: "Philips", tahun: "2021", jumlah: 5, baik: 3, rusakRingan: 1, rusakBerat: 1, room: "ICU", nextKalibrasi: "2023-12-01" },
+  { id: 2, name: "Infus Pump", merk: "Terumo", tahun: "2020", jumlah: 2, baik: 0, rusakRingan: 0, rusakBerat: 2, room: "IGD", nextKalibrasi: "2024-12-01" },
+  { id: 3, name: "USG 4D", merk: "GE", tahun: "2022", jumlah: 1, baik: 1, rusakRingan: 0, rusakBerat: 0, room: "ICU", nextKalibrasi: "2025-05-20" },
+];
+
+const INITIAL_REPORTS_MOCK = [
+  { id: 101, room: "ICU", date: getLocalDate(), bpjs: 5, umum: 2, total: 7 }
+];
+
+// --- FUNGSI BANTU PDF ---
+const loadScript = (src) => {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+};
+
+const ensurePdfLibraries = async () => {
+  try {
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js");
+    return true;
+  } catch (e) { console.error("PDF Lib Error", e); return false; }
+};
+
+// --- DATA MENU KMKP ---
+const KMKP_ITEMS = [
+    { name: "INDIKATOR MUTU", icon: BarChart3, link: "https://biolink.info/muturslebong" }, 
+    { name: "SIMMUTU", icon: Users, link: "https://172.31.1.2/simmutu/" },
+    { name: "SURVEY KEPUASAN", icon: FileSpreadsheet, link: "https://rsudlebong.fillout.com/skm" },
+    { name: "FORMULIR PENGADUAN", icon: AlertTriangle, link: "https://rsudlebong.fillout.com/pengaduan" }, 
+    { name: "SURVEY BUDAYA & KESELAMATAN", icon: ShieldCheck, link: "https://rsudlebong.fillout.com/surveibudaya" },
+];
+
+const PASTEL_COLORS = [
+    "bg-blue-100 text-blue-700 hover:bg-blue-200",
+    "bg-indigo-100 text-indigo-700 hover:bg-indigo-200",
+    "bg-emerald-100 text-emerald-700 hover:bg-emerald-200",
+    "bg-rose-100 text-rose-700 hover:bg-rose-200",
+    "bg-violet-100 text-violet-700 hover:bg-violet-200"
+];
+
+// --- KOMPONEN MODAL KONFIRMASI ---
+const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, type = 'danger' }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 modal-overlay">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm relative z-10 modal-content overflow-hidden transform transition-all">
+        <div className={`p-6 text-center ${type === 'danger' ? 'bg-rose-50' : 'bg-slate-50'}`}>
+          <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 shadow-sm ${type === 'danger' ? 'bg-rose-100 text-rose-500' : 'bg-slate-200 text-slate-600'}`}>
+            {type === 'danger' ? <Trash2 size={32} /> : <AlertOctagon size={32} />}
+          </div>
+          <h3 className={`text-xl font-black ${type === 'danger' ? 'text-rose-600' : 'text-slate-800'}`}>{title}</h3>
+        </div>
+        <div className="p-6 text-center">
+          <p className="text-slate-600 font-medium mb-8 leading-relaxed">{message}</p>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+              Batal
+            </button>
+            <button onClick={onConfirm} className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg transition-transform active:scale-95 ${type === 'danger' ? 'bg-gradient-to-r from-rose-500 to-red-600 shadow-rose-200' : 'bg-slate-700'}`}>
+              Ya, Lanjutkan
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- KOMPONEN TOAST NOTIFICATION (PENGGANTI ALERT()) ---
+const ToastNotification = ({ toast, setToast }) => {
+    if (!toast.show) return null;
+
+    let icon, color;
+    switch (toast.type) {
+        case 'success':
+            icon = <CheckCircle2 size={20} />;
+            color = 'bg-emerald-500';
+            break;
+        case 'error':
+            icon = <XCircle size={20} />;
+            color = 'bg-rose-500';
+            break;
+        case 'warning':
+            icon = <AlertTriangle size={20} />;
+            color = 'bg-amber-500';
+            break;
+        default:
+            icon = <Info size={20} />;
+            color = 'bg-blue-500';
+            break;
+    }
+
+    return (
+        <div className="fixed top-5 right-5 z-[10000] p-4">
+            <div className={`flex items-center gap-3 p-4 rounded-xl text-white shadow-xl ${color} transition-all duration-300 transform translate-y-0 opacity-100`} style={{ animation: 'toastIn 0.3s forwards' }}>
+                {icon}
+                <p className="font-semibold text-sm">{toast.message}</p>
+                <button onClick={() => setToast(prev => ({ ...prev, show: false }))} className="p-1 rounded-full hover:bg-white/20">
+                    <X size={16} />
+                </button>
+            </div>
+            <style jsx="true">{`
+                @keyframes toastIn {
+                    from { transform: translateY(-20px); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+            `}</style>
+        </div>
+    );
+};
+
+// 1. SIDEBAR
+const Sidebar = ({ activeView, onViewChange, user, onLogout }) => {
+  const [isKMKPOpen, setIsKMKPOpen] = useState(false);
+
+  return (
+    <div className="hidden md:flex w-72 flex-col h-full bg-white border-r border-slate-200 flex-shrink-0 z-20 shadow-lg">
+      <div className="p-6 flex flex-col h-full">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+            <Activity size={26} strokeWidth={3} />
+          </div>
+          <div>
+            <h1 className="font-extrabold text-lg leading-tight text-slate-800 tracking-tight">PORTAL<br/><span className="text-blue-600">RSUD LEBONG</span></h1>
+          </div>
+        </div>
+
+        <div className="space-y-3 flex-1 overflow-y-auto pr-1 pb-4">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">Menu Utama</div>
+            
+            <button onClick={() => onViewChange('dashboard')} className={`w-full flex items-center gap-3 p-3.5 rounded-xl font-bold text-sm btn-menu ${activeView === 'dashboard' ? 'btn-blue shadow-lg shadow-blue-500/30' : 'btn-ghost'}`}>
+              <LayoutDashboard size={20} />
+              <span>Dashboard</span>
+            </button>
+            
+            {/* MENU KMKP */}
+            <div className="space-y-1">
+              <button 
+                onClick={() => setIsKMKPOpen(!isKMKPOpen)} 
+                className={`w-full flex items-center gap-3 p-3.5 rounded-xl font-bold text-sm btn-menu btn-emerald text-white shadow-lg shadow-emerald-500/30 transition-all`}
+              >
+                <ClipboardList size={20} />
+                <span>KMKP</span>
+                <ChevronRight size={16} className={`ml-auto opacity-80 transition-transform duration-300 ${isKMKPOpen ? 'rotate-90' : ''}`}/>
+              </button>
+
+              {/* Animasi Dropdown */}
+              <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isKMKPOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+                  <div className="pl-3 space-y-2 pt-2">
+                    {KMKP_ITEMS.map((item, idx) => (
+                        <button 
+                            key={idx}
+                            onClick={() => window.open(item.link, "_blank")}
+                            className={`w-full flex items-center gap-3 p-3 rounded-xl text-[11px] font-bold transition-all shadow-sm group btn-menu ${PASTEL_COLORS[idx % PASTEL_COLORS.length]}`}
+                        >
+                            <div className="w-8 h-8 rounded-lg bg-white/40 flex items-center justify-center">
+                                <item.icon size={16} />
+                            </div>
+                            <span className="leading-tight">{item.name}</span>
+                        </button>
+                    ))}
+                  </div>
+              </div>
+            </div>
+
+            {!user && (
+              <button onClick={() => onViewChange('login')} className={`w-full flex items-center gap-3 p-3.5 rounded-xl font-bold text-sm btn-menu ${activeView === 'login' ? 'btn-violet shadow-lg shadow-violet-500/30' : 'btn-ghost'}`}>
+                 <LogIn size={20} />
+                 <span>Login Petugas</span>
+              </button>
+            )}
+        </div>
+
+        {user && (
+          <div className="mt-auto pt-6 border-t border-slate-100">
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                 <div className="flex items-center gap-3 mb-4">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-md ${user.role==='admin' ? 'bg-gradient-to-r from-violet-500 to-indigo-500' : 'bg-gradient-to-r from-emerald-400 to-teal-400'}`}>
+                        {user.name.charAt(0)}
+                    </div>
+                    <div className="overflow-hidden">
+                        <p className="text-[10px] text-slate-400 uppercase font-bold">Halo,</p>
+                        <p className="text-sm font-black text-slate-800 truncate w-24">{user.name}</p>
+                    </div>
+                 </div>
+                 <div className="grid gap-2">
+                    <button onClick={() => onViewChange('room_panel')} className="w-full py-2 bg-white rounded-xl text-xs font-bold text-violet-600 shadow-sm border border-violet-100 hover:bg-violet-50 flex items-center justify-center gap-2"><Edit size={12}/> Input Data</button>
+                    <button onClick={onLogout} className="w-full py-2 bg-slate-100 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-200 flex items-center justify-center gap-2"><LogOut size={12}/> Keluar</button>
+                 </div>
+              </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// 2. NAVIGASI MOBILE
+const MobileNav = ({ activeView, onViewChange, user }) => {
+  const [showKMKPMenu, setShowKMKPMenu] = useState(false);
+
+  return (
+    <>
+      <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around px-4 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        <button onClick={() => { setShowKMKPMenu(false); onViewChange('dashboard'); }} className={`flex flex-col items-center gap-1 ${activeView==='dashboard' ? 'text-blue-600' : 'text-slate-400'}`}>
+            <LayoutDashboard size={24}/>
+            <span className="text-[9px] font-bold">Dash</span>
+        </button>
+        
+        {/* TOMBOL KMKP - MEMBUKA MENU */}
+        <button onClick={() => setShowKMKPMenu(!showKMKPMenu)} className="flex flex-col items-center gap-1 text-emerald-500 relative -top-5">
+            <div className={`p-3 rounded-full shadow-lg transition-transform ${showKMKPMenu ? 'bg-white text-emerald-500 rotate-180' : 'bg-emerald-500 text-white shadow-emerald-200'}`}>
+              {showKMKPMenu ? <X size={24}/> : <ClipboardList size={24}/>}
+            </div>
+            {/* LABEL TEKS KMKP */}
+            <span className="text-[10px] font-bold text-slate-500 absolute -bottom-5">KMKP</span>
+        </button>
+
+        <button onClick={() => { setShowKMKPMenu(false); onViewChange(user ? 'room_panel' : 'login'); }} className={`flex flex-col items-center gap-1 ${['login','room_panel'].includes(activeView) ? 'text-violet-600' : 'text-slate-400'}`}>
+            {user ? <UserCircle size={24}/> : <LogIn size={24}/>}
+            <span className="text-[9px] font-bold">{user ? 'Panel' : 'Login'}</span>
+        </button>
+      </div>
+
+      {/* POPUP MENU KMKP UNTUK MOBILE */}
+      {showKMKPMenu && (
+           <div className="fixed inset-0 z-30 bg-slate-900/60 backdrop-blur-sm md:hidden flex flex-col justify-end pb-24 fade-up" onClick={() => setShowKMKPMenu(false)}>
+             <div className="bg-white rounded-t-3xl p-6 shadow-2xl mx-4 mb-4 rounded-b-3xl" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
+                  <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600">
+                     <ClipboardList size={20}/>
+                  </div>
+                  <div>
+                     <h3 className="font-bold text-slate-800">Menu KMKP</h3>
+                     <p className="text-xs text-slate-500">Pilih layanan yang tersedia</p>
+                  </div>
+                </div>
+                <div className="grid gap-3 max-h-[60vh] overflow-y-auto">
+                    {KMKP_ITEMS.map((item, idx) => (
+                       <button 
+                            key={idx}
+                            onClick={() => window.open(item.link, "_blank")}
+                            className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold text-sm shadow-sm btn-menu text-left ${PASTEL_COLORS[idx % PASTEL_COLORS.length]}`}
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-white/40 flex items-center justify-center text-white/90">
+                              <item.icon size={18}/>
+                            </div>
+                            {item.name}
+                            <ExternalLink size={16} className="ml-auto opacity-50"/>
+                       </button>
+                    ))}
+                </div>
+             </div>
+           </div>
+      )}
+    </>
+  );
+};
+
+// 3. TAMPILAN DASHBOARD
+const Dashboard = ({ reports, inventory, rooms }) => {
+  const today = getLocalDate(); // Menggunakan fungsi bantu tanggal
+  const [showAssetDetail, setShowAssetDetail] = useState(false);
+
+  // Data perhitungan
+  const todaysReports = reports.filter(r => r.date === today);
+  const reportedRoomNames = todaysReports.map(r => r.room);
+  const missingRooms = rooms.filter(r => !reportedRoomNames.includes(r.name)).map(r => r.name);
+  
+  const damagedItems = inventory.filter(i => (parseInt(i.rusakRingan) > 0 || parseInt(i.rusakBerat) > 0));
+  // Membandingkan tanggal kalibrasi dengan tanggal hari ini
+  const calibrationItems = inventory.filter(i => i.nextKalibrasi && new Date(i.nextKalibrasi) < new Date(today));
+  
+  const totalPasien = todaysReports.reduce((acc, curr) => acc + (parseInt(curr.total) || 0), 0);
+  
+  return (
+    <div className="p-6 lg:p-10 pb-24 h-full overflow-y-auto">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Sistem Online</span>
+            </div>
+            <h1 className="text-3xl font-black text-slate-800">Dashboard <span className="text-blue-600">Utama</span></h1>
+            <p className="text-slate-500 font-medium">Monitoring aktivitas RSUD Lebong.</p>
+          </div>
+          <div className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
+            <span className="text-xs font-bold text-slate-400 uppercase block">Tanggal</span>
+            <span className="font-bold text-slate-700">{new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          {/* Kartu 1: Ruangan Belum Lapor */}
+          <div className="rounded-[20px] p-6 relative overflow-hidden group bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-lg shadow-rose-200">
+            <div className="absolute right-0 top-0 opacity-10 transform scale-150"><Siren size={100}/></div>
+            <div className="relative z-10">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm"><Siren size={24}/></div>
+                <span className="text-xs font-bold bg-white/20 px-2 py-1 rounded-lg">Belum Lapor</span>
+              </div>
+              <h3 className="text-4xl font-black mb-1">{missingRooms.length}</h3>
+              <p className="text-sm font-bold opacity-90">Ruangan</p>
+              {missingRooms.length > 0 && <div className="mt-4 flex flex-wrap gap-1">
+                {missingRooms.slice(0,3).map(r => <span key={r} className="text-[10px] bg-white text-rose-600 px-2 py-1 rounded font-bold">{r}</span>)}
+              </div>}
+            </div>
+          </div>
+
+          {/* Kartu 2: Unit Bermasalah */}
+          <div className="rounded-[20px] p-6 relative overflow-hidden bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-orange-200">
+            <div className="absolute right-0 top-0 opacity-10 transform scale-150"><AlertTriangle size={100}/></div>
+            <div className="relative z-10">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm"><AlertTriangle size={24}/></div>
+                <span className="text-xs font-bold bg-white/20 px-2 py-1 rounded-lg">Perlu Perhatian</span>
+              </div>
+              <h3 className="text-4xl font-black mb-1">{damagedItems.length + calibrationItems.length}</h3>
+              <p className="text-sm font-bold opacity-90">Unit Bermasalah</p>
+              {(damagedItems.length > 0 || calibrationItems.length > 0) && (
+                  <button onClick={() => setShowAssetDetail(true)} className="mt-4 w-full py-2 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold transition-colors">Lihat Detail</button>
+              )}
+            </div>
+          </div>
+
+          {/* Kartu 3: Total Pasien Hari Ini */}
+          <div className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-[20px] p-6 shadow-xl shadow-blue-200 relative overflow-hidden">
+            <div className="absolute right-0 top-0 opacity-10"><Users size={120}/></div>
+            <div className="relative z-10">
+              <div className="p-2 bg-white/20 w-fit rounded-lg mb-4 backdrop-blur-sm"><Activity size={24} color="white"/></div>
+              <h3 className="text-4xl font-black mb-1">{totalPasien}</h3>
+              <p className="text-sm font-bold opacity-90">Total Pasien Hari Ini</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabel Kunjungan Pasien */}
+        <div className="modern-card overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope className="text-blue-500"/> Kunjungan Pasien Hari Ini</h3>
+            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-xs font-bold">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span> Live
+            </div>
+          </div>
+          <div className="overflow-x-auto p-4 bg-white">
+            <table className="color-table">
+              <thead>
+                <tr>
+                  <th>Ruangan</th>
+                  <th className="text-center">Total</th>
+                  <th className="text-center">BPJS</th>
+                  <th className="text-center">Umum</th>
+                  <th className="text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rooms.map(roomData => {
+                  const r = roomData.name;
+                  const rep = todaysReports.find(x => x.room === r);
+                  return (
+                      <tr key={r}>
+                        <td><div className="font-bold text-slate-700">{r}</div></td>
+                        <td className="text-center">{rep ? <span className="font-black text-lg text-slate-800">{rep.total}</span> : <span className="text-slate-300">-</span>}</td>
+                        <td className="text-center font-bold text-emerald-600">{rep ? rep.bpjs : "-"}</td>
+                        <td className="text-center font-bold text-indigo-600">{rep ? rep.umum : "-"}</td>
+                        <td className="text-center">
+                           {rep ? 
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700"><CheckCircle2 size={12}/> Masuk</span> : 
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-600"><XCircle size={12}/> Pending</span>
+                           }
+                        </td>
+                      </tr>
+                  )
+                }).sort((a,b) => (a.props.children[4].props.children.props.className.includes('Pending') ? 1 : -1))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Modal Detail Aset Bermasalah */}
+        {showAssetDetail && (
+          <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[80vh] overflow-hidden transform transition-all scale-100">
+                <div className="p-5 border-b border-orange-100 flex justify-between items-center bg-gradient-to-r from-amber-500 to-orange-500 rounded-t-2xl">
+                    <h3 className="font-bold text-white text-lg flex items-center gap-2"><AlertTriangle className="text-white"/> Unit Bermasalah</h3>
+                    <button onClick={() => setShowAssetDetail(false)} className="p-2 hover:bg-white/20 rounded-full text-white"><X size={20}/></button>
+                </div>
+                <div className="p-5 overflow-y-auto space-y-4">
+                    {damagedItems.length > 0 && (
+                        <div>
+                            <h4 className="font-bold text-slate-500 mb-2 text-xs uppercase tracking-wider">Rusak</h4>
+                            {damagedItems.map(item => (
+                                <div key={item.id} className="flex justify-between items-center p-3 bg-white border border-slate-200 rounded-xl shadow-sm mb-2">
+                                    <div>
+                                        <p className="font-bold text-slate-800 text-sm">{item.name}</p>
+                                        <p className="text-xs text-slate-400">{item.room}</p>
+                                    </div>
+                                    <div className="flex gap-1">
+                                        {parseInt(item.rusakRingan) > 0 && <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-1 rounded-lg font-bold">RR: {item.rusakRingan}</span>}
+                                        {parseInt(item.rusakBerat) > 0 && <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-1 rounded-lg font-bold">RB: {item.rusakBerat}</span>}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {calibrationItems.length > 0 && (
+                        <div>
+                            <h4 className="font-bold text-orange-500 mb-2 text-xs uppercase tracking-wider">Jadwal Kalibrasi (Sudah Lewat)</h4>
+                            {calibrationItems.map(item => (
+                                <div key={item.id} className="flex justify-between items-center p-3 bg-white border border-orange-100 rounded-xl shadow-sm mb-2">
+                                    <div>
+                                        <p className="font-bold text-slate-800 text-sm">{item.name}</p>
+                                        <p className="text-xs text-slate-400">{item.room}</p>
+                                    </div>
+                                    <span className="text-[10px] bg-orange-50 text-orange-700 px-2 py-1 rounded-lg font-bold">{item.nextKalibrasi}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+              </div>
+          </div>
+        )}
+    </div>
+  );
+};
+
+// 4. TAMPILAN LOGIN
+const LoginView = ({ onLogin, rooms, showToast }) => {
+    const [activeTab, setActiveTab] = useState('room');
+    const [room, setRoom] = useState(rooms[0]?.name || '');
+    const [pass, setPass] = useState('');
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if(activeTab === 'admin') {
+            if(pass === 'admin123') { // Gunakan password admin yang lebih kuat
+                onLogin('Super Admin', 'admin');
+            } else {
+                showToast("Password Admin Salah!", 'error');
+            }
+        } else {
+            const target = rooms.find(r => r.name === room);
+            if(target && target.password === pass) {
+                onLogin(room, 'room');
+            } else {
+                showToast("Password Ruangan Salah!", 'error');
+            }
+        }
+    };
+
+    return (
+      <div className="h-full flex items-center justify-center p-4">
+          <div className="w-full max-w-md p-8 rounded-[2rem] shadow-2xl bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-600 border border-white/20">
+            <div className="text-center mb-8">
+               <div className="w-16 h-16 bg-white/20 rounded-full mx-auto flex items-center justify-center text-white mb-4 backdrop-blur-sm border border-white/20">
+                 <KeyRound size={28}/>
+               </div>
+               <h2 className="text-2xl font-black text-white">Login Sistem</h2>
+               <p className="text-white/80 text-sm mt-1">Masuk untuk mengelola data RS.</p>
+            </div>
+
+            <div className="flex bg-white/20 p-1.5 rounded-xl mb-6 border border-white/20">
+               <button onClick={() => setActiveTab('room')} className={`flex-1 py-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab==='room' ? 'bg-white text-indigo-600 shadow-sm' : 'text-white/70 hover:text-white'}`}>Petugas</button>
+               <button onClick={() => setActiveTab('admin')} className={`flex-1 py-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab==='admin' ? 'bg-white text-indigo-600 shadow-sm' : 'text-white/70 hover:text-white'}`}>Admin</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+               {activeTab === 'room' && (
+                 <div>
+                    <label className="block text-xs font-bold text-white/80 uppercase mb-2">Pilih Ruangan</label>
+                    <div className="relative">
+                      <select value={room} onChange={e=>setRoom(e.target.value)} className="w-full glass-input p-3 rounded-xl font-bold appearance-none cursor-pointer">
+                          {rooms.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                      </select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none" size={18}/>
+                    </div>
+                 </div>
+               )}
+               
+               <div>
+                  <label className="block text-xs font-bold text-white/80 uppercase mb-2">Password ({activeTab === 'admin' ? 'admin123' : '123'})</label>
+                  <div className="relative">
+                     <input type="password" value={pass} onChange={e=>setPass(e.target.value)} className="w-full glass-input p-3 rounded-xl font-bold" placeholder="•••••••" required/>
+                     <ShieldCheck className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80" size={18}/>
+                  </div>
+               </div>
+
+               <button className={`w-full py-4 rounded-xl font-bold text-sm shadow-lg transition-transform hover:-translate-y-1 btn-menu bg-white text-indigo-600`}>
+                 MASUK SEKARANG
+               </button>
+            </form>
+          </div>
+      </div>
+    );
+};
+
+// 5. PANEL INPUT (LOGIC UTAMA)
+const PanelInput = ({ user, db, rooms, setRooms, inventory, reports, onBack, onLogout, showConfirm, showToast }) => {
+    const isAdmin = user.role === 'admin';
+    const [tab, setTab] = useState('pasien'); 
+    
+    // Status Filter
+    const [printFilter, setPrintFilter] = useState('Semua');
+    const displayedInventory = isAdmin 
+      ? (printFilter === 'Semua' ? inventory : inventory.filter(i => i.room === printFilter))
+      : inventory.filter(i => i.room === user.name);
+
+    // Filter & Sort Laporan
+    const myReports = isAdmin 
+      ? reports.sort((a,b) => new Date(b.date) - new Date(a.date)) 
+      : reports.filter(r => r.room === user.name).sort((a,b) => new Date(b.date) - new Date(a.date));
+
+    // Status Formulir
+    const [reportData, setReportData] = useState({ 
+      id: null, date: getLocalDate(), bpjs: '', umum: '', room: isAdmin ? (rooms[0]?.name || '') : user.name 
+    });
+    const [assetData, setAssetData] = useState({ 
+      id: null, name: '', merk: '', tahun: '', baik: 0, rusakRingan: 0, rusakBerat: 0, nextKalibrasi: '', room: isAdmin ? (rooms[0]?.name || '') : user.name 
+    });
+    const [newRoom, setNewRoom] = useState({ name: '', password: '' });
+    
+    const [isEditingReport, setIsEditingReport] = useState(false);
+    const [isEditingAsset, setIsEditingAsset] = useState(false);
+    const [isEditingRoom, setIsEditingRoom] = useState(false);
+    const [editRoomOriginalName, setEditRoomOriginalName] = useState("");
+
+    // --- LOGIC HAPUS (FIREBASE) ---
+    const handleDelete = async (collectionName, id, name) => {
+      // Hanya izinkan operasi jika DB aktif (bukan mode mock lokal)
+      if (db.isLocal) {
+        return showToast(`Gagal menghapus ${name}. Operasi DB tidak diizinkan di Mode Lokal.`, 'error');
+      }
+      
+      showConfirm('Hapus Data?', `Apakah Anda yakin ingin menghapus "${name}"?`, async () => {
+        try {
+          await deleteDoc(doc(db, ...BASE_PATH_SEGMENTS, collectionName, id));
+          showToast(`${name} berhasil dihapus!`, 'success');
+        } catch (e) {
+          console.error("Error deleting document: ", e);
+          showToast(`Gagal menghapus ${name}.`, 'error');
+        }
+      });
+    };
+    
+    const handleDeleteAsset = (id, name) => handleDelete(INVENTORY_COLLECTION, id, name);
+    const handleDeleteReport = (id, date) => handleDelete(REPORTS_COLLECTION, id, `Laporan tgl. ${date}`);
+    const handleDeleteRoom = (id, name) => handleDelete(ROOMS_COLLECTION, id, `Ruangan ${name}`);
+
+
+    // --- LOGIC SIMPAN LAPORAN (FIREBASE) ---
+    const saveReport = async (e) => {
+      e.preventDefault();
+      // Mencegah operasi jika DB tidak aktif
+      if (db.isLocal) {
+         return showToast("Gagal menyimpan laporan. Operasi DB tidak diizinkan di Mode Lokal.", 'error');
+      }
+
+      const valBpjs = parseInt(reportData.bpjs) || 0;
+      const valUmum = parseInt(reportData.umum) || 0;
+      const total = valBpjs + valUmum;
+      
+      const finalRoom = isAdmin ? reportData.room : user.name;
+      const finalData = { 
+        ...reportData, 
+        bpjs: valBpjs, 
+        umum: valUmum, 
+        room: finalRoom, 
+        total,
+        // Remove 'id' before saving to Firestore, Firestore uses its own ID
+        id: undefined 
+      };
+
+      try {
+        if (isEditingReport) {
+            // Update
+            await setDoc(doc(db, ...BASE_PATH_SEGMENTS, REPORTS_COLLECTION, reportData.id), finalData);
+            showToast("Laporan berhasil diperbarui!", 'success');
+            setIsEditingReport(false);
+        } else {
+            // Check for duplicate (date and room name) before adding
+            const existingReport = myReports.find(r => r.date === finalData.date && r.room === finalData.room);
+            if (existingReport) {
+                showToast(`Laporan untuk ruangan ${finalData.room} pada tanggal ${finalData.date} sudah ada. Silakan edit laporan tersebut.`, 'error');
+                return;
+            }
+            // Add new
+            await addDoc(collection(db, ...BASE_PATH_SEGMENTS, REPORTS_COLLECTION), finalData);
+            showToast("Laporan berhasil disimpan!", 'success');
+        }
+      } catch (e) {
+        console.error("Error saving report: ", e);
+        showToast("Gagal menyimpan laporan.", 'error');
+      }
+      setReportData({ ...reportData, id: null, bpjs: '', umum: '', date: getLocalDate() });
+    };
+
+    // --- LOGIC SIMPAN ASET (FIREBASE) ---
+    const saveAsset = async (e) => {
+      e.preventDefault();
+       // Mencegah operasi jika DB tidak aktif
+      if (db.isLocal) {
+         return showToast("Gagal menyimpan aset. Operasi DB tidak diizinkan di Mode Lokal.", 'error');
+      }
+
+      const baik = parseInt(assetData.baik) || 0;
+      const rr = parseInt(assetData.rusakRingan) || 0;
+      const rb = parseInt(assetData.rusakBerat) || 0;
+      
+      const total = baik + rr + rb;
+      const status = total === 0 ? 'Kosong' : (rr > 0 || rb > 0) ? (rb > 0 ? 'Rusak Berat' : 'Rusak Ringan') : 'Baik';
+      const finalRoom = isAdmin ? assetData.room : user.name;
+      const payload = { 
+        ...assetData, 
+        room: finalRoom, 
+        baik, rusakRingan: rr, rusakBerat: rb, 
+        jumlah: total, 
+        status,
+        id: undefined // Remove 'id'
+      };
+      
+      try {
+        if (isEditingAsset) {
+            // Update
+            await setDoc(doc(db, ...BASE_PATH_SEGMENTS, INVENTORY_COLLECTION, assetData.id), payload);
+            showToast("Aset berhasil diperbarui!", 'success');
+            setIsEditingAsset(false);
+        } else {
+            // Add new
+            await addDoc(collection(db, ...BASE_PATH_SEGMENTS, INVENTORY_COLLECTION), payload);
+            showToast("Aset berhasil ditambahkan!", 'success');
+        }
+      } catch (e) {
+        console.error("Error saving asset: ", e);
+        showToast("Gagal menyimpan aset.", 'error');
+      }
+      setAssetData({ ...assetData, id: null, name: '', merk: '', tahun: '', baik: 0, rusakRingan: 0, rusakBerat: 0, nextKalibrasi: '' });
+    };
+
+    // --- LOGIC SIMPAN RUANGAN (FIREBASE) ---
+    const saveRoom = async (e) => {
+      e.preventDefault();
+      if(!newRoom.name || !newRoom.password) {
+          showToast("Nama Ruangan dan Password tidak boleh kosong.", 'error');
+          return;
+      }
+      // Mencegah operasi jika DB tidak aktif
+      if (db.isLocal) {
+         return showToast("Gagal menyimpan ruangan. Operasi DB tidak diizinkan di Mode Lokal.", 'error');
+      }
+      
+      const payload = {...newRoom};
+
+      try {
+        if (isEditingRoom) {
+          // Find the room document ID from the current rooms list
+          const targetRoom = rooms.find(r => r.name === editRoomOriginalName);
+          if (targetRoom) {
+            // Update the existing room document
+            await setDoc(doc(db, ...BASE_PATH_SEGMENTS, ROOMS_COLLECTION, targetRoom.id), payload);
+            showToast(`Ruangan ${newRoom.name} diperbarui!`, 'success');
+            setIsEditingRoom(false);
+            setEditRoomOriginalName("");
+          } else {
+            showToast("Ruangan yang akan diedit tidak ditemukan.", 'error');
+          }
+        } else {
+            // Mencegah nama ruangan duplikat
+            if (rooms.some(r => r.name === newRoom.name)) {
+              showToast(`Ruangan dengan nama "${newRoom.name}" sudah ada.`, 'error');
+              return;
+            }
+            // Add new
+            await addDoc(collection(db, ...BASE_PATH_SEGMENTS, ROOMS_COLLECTION), payload);
+            showToast("Ruangan baru ditambahkan!", 'success');
+        }
+      } catch (e) {
+        console.error("Error saving room: ", e);
+        showToast("Gagal menyimpan ruangan.", 'error');
+      }
+      setNewRoom({name:'', password:''});
+    };
+
+    // --- EKSPOR PDF (KARTU INVENTARIS RUANGAN) ---
+    const downloadPDF = async () => {
+      // 1. Memuat Pustaka
+      const libReady = await ensurePdfLibraries();
+      if (!libReady) {
+          showToast("Gagal memuat library PDF. Cek koneksi internet.", 'error');
+          return;
+      }
+      
+      // 2. Memastikan Objek Pustaka Tersedia
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+          showToast("Sistem PDF sedang disiapkan, silakan klik lagi dalam 2 detik.", 'warning');
+          return;
+      }
+
+      try {
+          // 3. Inisiasi Dokumen
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF('l', 'mm', 'a4'); // mode landscape
+          
+          const roomNameTitle = isAdmin ? (printFilter === 'Semua' ? 'SEMUA RUANGAN (REKAPITULASI)' : printFilter.toUpperCase()) : user.name.toUpperCase();
+          
+          // Header RSUD Lebong
+          doc.setFontSize(12); doc.setFont("helvetica", "bold");
+          doc.text("PEMERINTAH KABUPATEN LEBONG", 148.5, 15, { align: "center" });
+          doc.setFontSize(14); doc.text("RUMAH SAKIT UMUM DAERAH", 148.5, 22, { align: "center" });
+          doc.setFontSize(10); doc.setFont("helvetica", "normal");
+          doc.text("Jl. Muara Aman-Curup Desa Muning Agung Kec. Lebong Sakti Kab. Lebong 39163", 148.5, 28, { align: "center" });
+          doc.text("Email: rsudlebong20@gmail.com", 148.5, 33, { align: "center" });
+          doc.setLineWidth(0.5); doc.line(10, 36, 287, 36); 
+
+          // Judul Dokumen
+          doc.setFontSize(14); doc.setFont("helvetica", "bold");
+          doc.text("KARTU INVENTARIS RUANGAN (KIR)", 148.5, 45, { align: "center" });
+          doc.setFontSize(11); doc.text(`NAMA RUANGAN: ${roomNameTitle}`, 14, 55);
+
+          // Siapkan Data Tabel
+          const headers = [[ { content: 'NO', rowSpan: 2 }, { content: 'NAMA BARANG', rowSpan: 2 }, { content: 'MERK', rowSpan: 2 }, { content: 'THN', rowSpan: 2 }, { content: 'JML', rowSpan: 2 }, { content: 'KONDISI', colSpan: 3 }, { content: 'KET (KALIBRASI)', rowSpan: 2 } ], [ { content: 'B' }, { content: 'RR' }, { content: 'RB' } ]];
+          const data = displayedInventory.map((i, idx) => [ idx + 1, i.name, i.merk || '-', i.tahun || '-', i.jumlah, i.baik, i.rusakRingan, i.rusakBerat, i.nextKalibrasi || "-" ]);
+
+          // @ts-ignore (Menggunakan jspdf-autotable)
+          doc.autoTable({ head: headers, body: data, startY: 60, theme: 'grid', styles: { fontSize: 9, cellPadding: 2, lineColor: [0, 0, 0], lineWidth: 0.1 }, headStyles: { fillColor: [20, 184, 166], textColor: [255, 255, 255], lineWidth: 0.1 } });
+
+          // Tanda Tangan
+          // @ts-ignore
+          const finalY = doc.lastAutoTable.finalY + 20;
+          const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+          doc.text(`Lebong, ${dateStr}`, 220, finalY);
+          doc.text("Penanggung Jawab Ruangan", 220, finalY + 6);
+          doc.text("_______________________", 220, finalY + 30);
+          
+          doc.save(`KIR_${roomNameTitle}.pdf`);
+      } catch (err) {
+          console.error(err);
+          showToast("Terjadi kesalahan saat membuat PDF.", 'error');
+      }
+    };
+
+    // --- EKSPOR EXCEL ---
+    const downloadExcel = () => {
+      const roomNameTitle = isAdmin ? (printFilter === 'Semua' ? 'SEMUA RUANGAN' : printFilter) : user.name;
+      const fileName = `Inventaris_${roomNameTitle}.xls`;
+      const tableHTML = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><style>table{border-collapse:collapse;width:100%;}th,td{border:1px solid #000000;padding:5px;text-align:center;font-family:Arial,sans-serif;}th{background-color:#f2f2f2;font-weight:bold;}.text-left{text-align:left;}</style></head><body><h3 style="text-align:center;">KARTU INVENTARIS RUANGAN (KIR) - ${roomNameTitle}</h3><table><thead><tr><th rowspan="2">NO</th><th rowspan="2">NAMA BARANG</th><th rowspan="2">MERK</th><th rowspan="2">TAHUN</th><th rowspan="2">JUMLAH</th><th colspan="3">KONDISI</th><th rowspan="2">KET (KALIBRASI)</th></tr><tr><th>BAIK</th><th>RR</th><th>RB</th></tr></thead><tbody>${displayedInventory.map((item, index) => `<tr><td>${index + 1}</td><td class="text-left">${item.name}</td><td>${item.merk || '-'}</td><td>${item.tahun || '-'}</td><td>${item.jumlah}</td><td>${item.baik}</td><td>${item.rusakRingan}</td><td>${item.rusakBerat}</td><td>${item.nextKalibrasi || '-'}</td></tr>`).join('')}</tbody></table></body></html>`;
+      const blob = new Blob([tableHTML], { type: 'application/vnd.ms-excel' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
+    };
+
+    // Reset form saat tab berpindah
+    useEffect(() => {
+        setReportData({ id: null, date: getLocalDate(), bpjs: '', umum: '', room: isAdmin ? (rooms[0]?.name || '') : user.name });
+        setIsEditingReport(false);
+        setAssetData({ id: null, name: '', merk: '', tahun: '', baik: 0, rusakRingan: 0, rusakBerat: 0, nextKalibrasi: '', room: isAdmin ? (rooms[0]?.name || '') : user.name });
+        setIsEditingAsset(false);
+        setNewRoom({ name: '', password: '' });
+        setIsEditingRoom(false);
+    }, [tab, isAdmin, rooms, user.name]);
+
+    return (
+      <div className="p-6 lg:p-10 pb-24 h-full overflow-y-auto pop-in">
+          {/* HEADER */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <div className="flex items-center gap-4 w-full md:w-auto">
+               <button onClick={onBack} className="p-3 bg-white rounded-xl shadow-sm border border-slate-200 hover:bg-slate-50 text-slate-600 transition-all">
+                 <ArrowLeft size={20}/>
+               </button>
+               <div>
+                 <h2 className="text-3xl font-black text-slate-800">Panel <span className="text-blue-600">{isAdmin ? 'Super Admin' : user.name}</span></h2>
+                 <p className="text-slate-500 font-medium">Kelola data sistem secara lengkap.</p>
+                 {db && db.isLocal && <span className="text-xs font-bold text-rose-500 mt-1 block">MODE LOKAL: Operasi Simpan/Hapus Dinonaktifkan.</span>}
+               </div>
+               {/* TOMBOL LOGOUT KHUSUS MOBILE */}
+               <button onClick={onLogout} className="md:hidden ml-auto p-3 bg-white text-rose-500 rounded-xl shadow-sm border border-slate-200 hover:bg-rose-50 transition-all">
+                 <LogOut size={20}/>
+               </button>
+            </div>
+            
+            <div className="bg-white p-1.5 rounded-2xl border border-slate-200 flex shadow-sm">
+               <button onClick={()=>setTab('pasien')} className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider btn-menu ${tab==='pasien' ? 'btn-blue shadow-lg shadow-blue-500/30' : 'bg-transparent text-slate-500 hover:bg-slate-50'}`}>Pasien</button>
+               <button onClick={()=>setTab('aset')} className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider btn-menu ${tab==='aset' ? 'btn-emerald shadow-lg shadow-emerald-500/30' : 'bg-transparent text-slate-500 hover:bg-slate-50'}`}>Aset</button>
+               {isAdmin && <button onClick={()=>setTab('ruangan')} className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider btn-menu ${tab==='ruangan' ? 'bg-orange-100 text-orange-700 shadow-sm' : 'bg-transparent text-slate-500 hover:bg-slate-50'}`}>Ruangan</button>}
+            </div>
+          </div>
+
+          {/* TAMPILAN: PASIEN */}
+          {tab === 'pasien' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="card-base p-6 h-fit bg-gradient-to-br from-blue-500 to-cyan-500 shadow-2xl border-none">
+                <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Edit className="text-white"/> {isEditingReport ? 'Edit Laporan' : 'Input Pasien Harian'}</h3>
+                <form onSubmit={saveReport} className="space-y-4">
+                    {isAdmin ? (
+                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Pilih Ruangan</label><select value={reportData.room} onChange={e=>setReportData({...reportData, room:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold">{rooms.map(r=><option key={r.id} value={r.name}>{r.name}</option>)}</select></div>
+                    ) : (
+                      <div className="bg-white/20 p-3 rounded-xl border border-white/20">
+                          <span className="text-[10px] font-bold text-white/80 uppercase block">Ruangan</span>
+                          <span className="font-black text-white text-lg">{user.name}</span>
+                      </div>
+                    )}
+                    <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Tanggal</label><input type="date" value={reportData.date} onChange={e=>setReportData({...reportData, date:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" required/></div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">BPJS</label><input type="number" value={reportData.bpjs} onChange={e=>setReportData({...reportData, bpjs:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" required/></div>
+                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Umum</label><input type="number" value={reportData.umum} onChange={e=>setReportData({...reportData, umum:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" required/></div>
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      {isEditingReport && <button type="button" onClick={()=>{setIsEditingReport(false); setReportData({...reportData, id:null, bpjs:'', umum:'', date: getLocalDate()})}} className="flex-1 bg-white/20 text-white py-3 rounded-xl font-bold text-sm hover:bg-white/30">Batal</button>}
+                      {/* Tombol dinonaktifkan jika dalam mode lokal (tidak ada DB) */}
+                      <button className="flex-1 bg-white text-blue-600 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-50 transition-all" disabled={db && db.isLocal}>{isEditingReport ? 'Update Data' : 'Simpan Data'}</button>
+                    </div>
+                </form>
+              </div>
+              <div className="lg:col-span-2 space-y-4">
+                {myReports.length === 0 ? <div className="card-white p-6 text-center text-slate-400 font-medium">Belum ada laporan yang tersedia.</div> :
+                myReports.map(item => (
+                    <div key={item.id} className="card-white p-4 flex items-center justify-between group">
+                      <div className="flex items-center gap-4">
+                         <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black text-xl border border-blue-100">{item.total}</div>
+                         <div><h4 className="font-bold text-slate-800">{item.room}</h4><p className="text-xs text-slate-400">{item.date}</p></div>
+                      </div>
+                      <div className="flex gap-2">
+                          <span className="hidden sm:inline bg-slate-50 px-3 py-1 rounded-lg text-xs font-bold text-slate-500 border border-slate-200">BPJS: {item.bpjs}</span>
+                          <span className="hidden sm:inline bg-slate-50 px-3 py-1 rounded-lg text-xs font-bold text-slate-500 border border-slate-200">Umum: {item.umum}</span>
+                          <button onClick={() => { setReportData(item); setIsEditingReport(true); }} className="p-2 bg-indigo-50 text-indigo-500 rounded-lg hover:bg-indigo-100"><Edit size={16}/></button>
+                          <button onClick={() => handleDeleteReport(item.id, item.date)} className="p-2 btn-slate rounded-lg" disabled={db && db.isLocal}><Trash2 size={16}/></button>
+                      </div>
+                    </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAMPILAN: ASET */}
+          {tab === 'aset' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="card-base p-6 h-fit bg-gradient-to-br from-emerald-500 to-teal-500 shadow-2xl border-none">
+                <h3 className="font-bold text-white mb-4 flex items-center gap-2"><PackagePlus className="text-white"/> {isEditingAsset ? 'Edit Aset' : 'Tambah Aset'}</h3>
+                <form onSubmit={saveAsset} className="space-y-3">
+                    {isAdmin ? (
+                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Ruangan</label><select value={assetData.room} onChange={e=>setAssetData({...assetData, room:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold">{rooms.map(r=><option key={r.id} value={r.name}>{r.name}</option>)}</select></div>
+                    ) : (
+                      <div className="bg-white/20 p-3 rounded-xl border border-white/20">
+                          <span className="text-[10px] font-bold text-white/80 uppercase block">Ruangan</span>
+                          <span className="font-black text-white text-lg">{user.name}</span>
+                      </div>
+                    )}
+                    <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Nama Barang</label><input value={assetData.name} onChange={e=>setAssetData({...assetData, name:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" required placeholder="Contoh: USG"/></div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Merk/Type</label><input value={assetData.merk} onChange={e=>setAssetData({...assetData, merk:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold"/></div>
+                      <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Tahun</label><input type="number" value={assetData.tahun} onChange={e=>setAssetData({...assetData, tahun:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold"/></div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 p-3 bg-white/20 rounded-xl border border-white/20">
+                      <div><label className="text-[9px] font-bold text-white text-center block">Baik</label><input type="number" value={assetData.baik} onChange={e=>setAssetData({...assetData, baik:e.target.value})} className="w-full glass-input p-2 rounded-lg text-center font-bold text-sm"/></div>
+                      <div><label className="text-[9px] font-bold text-white text-center block">R.Ringan</label><input type="number" value={assetData.rusakRingan} onChange={e=>setAssetData({...assetData, rusakRingan:e.target.value})} className="w-full glass-input p-2 rounded-lg text-center font-bold text-sm"/></div>
+                      <div><label className="text-[9px] font-bold text-white text-center block">R.Berat</label><input type="number" value={assetData.rusakBerat} onChange={e=>setAssetData({...assetData, rusakBerat:e.target.value})} className="w-full glass-input p-2 rounded-lg text-center font-bold text-sm"/></div>
+                    </div>
+                    <div><label className="text-[10px] font-bold text-white/80 uppercase ml-1">Jadwal Kalibrasi</label><input type="date" value={assetData.nextKalibrasi} onChange={e=>setAssetData({...assetData, nextKalibrasi:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold"/></div>
+                    <div className="flex gap-2 pt-2">
+                      {isEditingAsset && <button type="button" onClick={()=>{setIsEditingAsset(false); setAssetData({id:null, name:'', merk:'', tahun:'', baik:0, rusakRingan:0, rusakBerat:0, nextKalibrasi:''})}} className="flex-1 bg-white/20 text-white py-3 rounded-xl font-bold text-sm hover:bg-white/30">Batal</button>}
+                      <button className="flex-1 bg-white text-emerald-600 py-3 rounded-xl font-bold shadow-lg hover:bg-emerald-50 transition-all" disabled={db && db.isLocal}>{isEditingAsset ? 'Update' : 'Simpan'}</button>
+                    </div>
+                </form>
+              </div>
+
+              <div className="lg:col-span-2 space-y-4">
+                <div className="flex justify-between items-center bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex items-center gap-3">
+                       <h4 className="font-bold text-slate-700 ml-2">Daftar Inventaris</h4>
+                        {/* DROPDOWN FILTER UNTUK ADMIN */}
+                        {isAdmin && (
+                            <div className="relative">
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Filter size={14}/></div>
+                                <select 
+                                    value={printFilter} 
+                                    onChange={(e) => setPrintFilter(e.target.value)}
+                                    className="pl-9 pr-8 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 bg-slate-50 focus:outline-none focus:border-blue-400 cursor-pointer appearance-none"
+                                >
+                                    <option value="Semua">Semua Ruangan</option>
+                                    {rooms.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                                </select>
+                                <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex gap-2">
+                         <button onClick={downloadExcel} className="px-3 py-2 bg-emerald-100 text-emerald-600 rounded-lg text-xs font-bold hover:bg-emerald-100 flex gap-2 items-center" disabled={db && db.isLocal}><FileSpreadsheet size={16}/> Excel</button>
+                         <button onClick={downloadPDF} className="px-3 py-2 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold hover:bg-orange-100 flex gap-2 items-center" disabled={db && db.isLocal}><FileDown size={16}/> PDF</button>
+                    </div>
+                </div>
+                <div className="card-white overflow-hidden">
+                    <div className="overflow-x-auto p-4">
+                        <table className="color-table">
+                           <thead><tr><th>Barang</th><th>Jml</th><th>Baik</th><th>RR</th><th>RB</th><th>Aksi</th></tr></thead>
+                           <tbody>
+                             {displayedInventory.length === 0 ? <tr><td colSpan="6" className="text-center text-slate-400 py-6">Belum ada data.</td></tr> : 
+                             displayedInventory.map(i => (
+                                 <tr key={i.id}>
+                                    <td><div className="font-bold">{i.name}</div><div className="text-[10px] text-slate-400">{i.room} - {i.merk || '-'}</div></td>
+                                    <td className="text-center font-black text-slate-600">{i.jumlah}</td>
+                                    <td className="text-center font-bold text-emerald-500">{i.baik}</td>
+                                    <td className="text-center font-bold text-orange-400">{i.rusakRingan}</td>
+                                    <td className="text-center font-bold text-slate-500">{i.rusakBerat}</td>
+                                    <td>
+                                       <div className="flex justify-center gap-2">
+                                           {(isAdmin || i.room === user.name) && (
+                                               <>
+                                                   <button onClick={() => { setAssetData(i); setIsEditingAsset(true); }} className="p-1.5 bg-indigo-50 text-indigo-500 rounded-lg hover:bg-indigo-100"><Edit size={14}/></button>
+                                                   <button onClick={() => handleDeleteAsset(i.id, i.name)} className="p-1.5 btn-slate rounded-lg" disabled={db && db.isLocal}><Trash2 size={14}/></button>
+                                               </>
+                                           )}
+                                       </div>
+                                    </td>
+                                 </tr>
+                             ))}
+                           </tbody>
+                        </table>
+                    </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAMPILAN: RUANGAN (KHUSUS ADMIN) */}
+          {tab === 'ruangan' && isAdmin && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="card-base p-6 h-fit bg-gradient-to-br from-purple-400 to-violet-500 shadow-2xl border-none">
+                <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Building className="text-white"/> {isEditingRoom ? 'Edit Ruangan' : 'Tambah Ruangan'}</h3>
+                <form onSubmit={saveRoom} className="space-y-4">
+                    <div><label className="text-[10px] font-bold text-white/80 uppercase ml-2">Nama Ruangan</label><input value={newRoom.name} onChange={e=>setNewRoom({...newRoom, name:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" placeholder="Contoh: Poli Syaraf"/></div>
+                    <div><label className="text-[10px] font-bold text-white/80 uppercase ml-2">Password</label><input value={newRoom.password} onChange={e=>setNewRoom({...newRoom, password:e.target.value})} className="w-full glass-input p-3 rounded-xl font-bold" placeholder="123"/></div>
+                    <div className="flex gap-2 pt-2">
+                      {isEditingRoom && <button type="button" onClick={()=>{setIsEditingRoom(false); setNewRoom({name:'', password:''})}} className="flex-1 bg-white/20 text-white py-3 rounded-xl font-bold text-sm hover:bg-white/30">Batal</button>}
+                      <button className="flex-1 bg-white text-violet-600 py-3 rounded-xl font-bold shadow-lg hover:bg-violet-50 transition-all" disabled={db && db.isLocal}>{isEditingRoom ? 'Update' : 'Tambah'}</button>
+                    </div>
+                </form>
+              </div>
+              <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {rooms.map(r => (
+                    <div key={r.id} className="card-white p-5 flex justify-between items-center group">
+                      <div className="flex items-center gap-3">
+                         <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-400 border border-slate-200">{r.name.charAt(0)}</div>
+                         <div><h4 className="font-bold text-slate-800">{r.name}</h4><p className="text-[10px] text-slate-400 font-mono">Pass: {r.password}</p></div>
+                      </div>
+                      <div className="flex gap-2">
+                          <button onClick={() => { setNewRoom(r); setEditRoomOriginalName(r.name); setIsEditingRoom(true); }} className="p-2 bg-indigo-50 text-indigo-500 rounded-xl hover:bg-indigo-100"><Edit size={16}/></button>
+                          <button onClick={() => handleDeleteRoom(r.id, r.name)} className="p-2 btn-slate rounded-xl" disabled={db && db.isLocal}><Trash2 size={16}/></button>
+                      </div>
+                    </div>
+                ))}
+              </div>
+            </div>
+          )}
+      </div>
+    );
+};
+
+// 6. KONTENER APLIKASI UTAMA
+const App = () => {
+    // Firebase State
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+    const [isDataInitialized, setIsDataInitialized] = useState(false);
+
+    // Application State
+    const [view, setView] = useState('dashboard');
+    const [user, setUser] = useState(null); // {name: string, role: 'admin' | 'room'}
+    const [rooms, setRooms] = useState([]);
+    const [inventory, setInventory] = useState([]);
+    const [reports, setReports] = useState([]);
+
+    // STATUS TOAST & MODAL
+    const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+    const [confirmModal, setConfirmModal] = useState({
+      isOpen: false,
+      title: '',
+      message: '',
+      onConfirm: null,
+      type: 'danger'
+    });
+
+    // FUNGSI BANTU TOAST
+    const showToast = (message, type = 'success') => {
+        setToast({ show: true, message, type });
+        // Sembunyikan toast setelah 3 detik
+        setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
+    };
+
+    // FUNGSI BANTU KONFIRMASI
+    const showConfirm = (title, message, action, type='danger') => {
+      setConfirmModal({
+        isOpen: true,
+        title,
+        message,
+        onConfirm: () => {
+          action();
+          setConfirmModal(prev => ({...prev, isOpen: false}));
+        },
+        onClose: () => setConfirmModal(prev => ({...prev, isOpen: false})),
+        type
+      });
+    };
+
+    // 1. FIREBASE INITIALIZATION & AUTHENTICATION
+    useEffect(() => {
+        
+        // Cek jika konfigurasi Firebase tidak ada ATAU USE_LOCAL_MOCK_MODE disetel TRUE
+        if (!Object.keys(firebaseConfig).length || USE_LOCAL_MOCK_MODE) {
+            console.warn("Firebase config missing OR USE_LOCAL_MOCK_MODE is TRUE. Running in LOCAL MOCK MODE.");
+            // --- Fallback ke Local Mock Mode ---
+            setDb({ isLocal: true, name: 'MockDB' }); // Tandai DB sebagai lokal/mock
+            setRooms(INITIAL_ROOMS_MOCK);
+            setInventory(INITIAL_INVENTORY_MOCK);
+            setReports(INITIAL_REPORTS_MOCK);
+            setIsDataInitialized(true);
+            setIsAuthReady(true);
+            return;
+        }
+
+        // --- Mulai Inisialisasi Firebase Asli ---
+        try {
+            const app = initializeApp(firebaseConfig);
+            const firestore = getFirestore(app);
+            firestore.isLocal = false; 
+            const firebaseAuth = getAuth(app);
+            
+            setDb(firestore);
+            setAuth(firebaseAuth);
+
+            // Authentication Listener
+            onAuthStateChanged(firebaseAuth, async (currentUser) => {
+                if (!currentUser) {
+                    try {
+                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                        if (token) {
+                            await signInWithCustomToken(firebaseAuth, token);
+                        } else {
+                            await signInAnonymously(firebaseAuth);
+                        }
+                    } catch (error) {
+                        console.error("Firebase Sign-In Failed:", error);
+                    }
+                }
+                setIsAuthReady(true); 
+            });
+
+        } catch (e) {
+            console.error("Error initializing Firebase:", e);
+            showToast("Gagal Inisialisasi Firebase. Cek konsol.", 'error');
+            setIsAuthReady(true); 
+        }
+    }, []);
+
+    // 2. INITIAL DATA SETUP (Seed Mock Data if collections are empty - HANYA JALAN JIKA DB ASLI AKTIF)
+    useEffect(() => {
+      const checkAndSeedData = async () => {
+        // Hanya jalankan jika DB asli aktif (bukan mode lokal/mock)
+        if (!db || db.isLocal || !isAuthReady || isDataInitialized) return;
+        
+        const roomsRef = collection(db, ...BASE_PATH_SEGMENTS, ROOMS_COLLECTION);
+        const roomsSnapshot = await getDocs(roomsRef);
+        
+        if (roomsSnapshot.empty) {
+            console.log("Seeding initial mock data into Firestore...");
+            const batch = writeBatch(db);
+
+            // Seed Rooms
+            INITIAL_ROOMS_MOCK.forEach(room => {
+                const newDocRef = doc(roomsRef);
+                // Hapus ID mock, Firestore akan membuatnya sendiri
+                const { id, ...roomData } = room; 
+                batch.set(newDocRef, roomData);
+            });
+
+            // Seed Inventory
+            const inventoryRef = collection(db, ...BASE_PATH_SEGMENTS, INVENTORY_COLLECTION);
+            INITIAL_INVENTORY_MOCK.forEach(item => {
+                const newDocRef = doc(inventoryRef);
+                const { id, ...itemData } = item;
+                batch.set(newDocRef, itemData);
+            });
+
+            // Seed Reports
+            const reportsRef = collection(db, ...BASE_PATH_SEGMENTS, REPORTS_COLLECTION);
+            INITIAL_REPORTS_MOCK.forEach(item => {
+                const newDocRef = doc(reportsRef);
+                const { id, ...itemData } = item;
+                batch.set(newDocRef, itemData);
+            });
+
+            await batch.commit();
+            console.log("Initial data seeding complete.");
+        }
+        setIsDataInitialized(true);
+      };
+
+      if (db && !db.isLocal && isAuthReady) {
+        checkAndSeedData();
+      }
+    }, [db, isAuthReady, isDataInitialized]);
+
+
+    // 3. REAL-TIME DATA SUBSCRIPTION (onSnapshot - HANYA JALAN JIKA DB ASLI AKTIF)
+    useEffect(() => {
+        // Hanya jalankan jika DB asli aktif (bukan mode lokal/mock)
+        if (!db || db.isLocal || !isDataInitialized) return;
+
+        // Listener for Rooms
+        const unsubscribeRooms = onSnapshot(collection(db, ...BASE_PATH_SEGMENTS, ROOMS_COLLECTION), (snapshot) => {
+            const fetchedRooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setRooms(fetchedRooms);
+        }, (error) => {
+            console.error("Error fetching rooms:", error);
+            showToast("Gagal memuat data Ruangan (Live).", 'error');
+        });
+
+        // Listener for Inventory
+        const unsubscribeInventory = onSnapshot(collection(db, ...BASE_PATH_SEGMENTS, INVENTORY_COLLECTION), (snapshot) => {
+            const fetchedInventory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setInventory(fetchedInventory);
+        }, (error) => {
+            console.error("Error fetching inventory:", error);
+            showToast("Gagal memuat data Inventaris (Live).", 'error');
+        });
+
+        // Listener for Reports
+        const unsubscribeReports = onSnapshot(collection(db, ...BASE_PATH_SEGMENTS, REPORTS_COLLECTION), (snapshot) => {
+            const fetchedReports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setReports(fetchedReports);
+        }, (error) => {
+            console.error("Error fetching reports:", error);
+            showToast("Gagal memuat data Laporan (Live).", 'error');
+        });
+
+
+        // Cleanup subscriptions
+        return () => {
+            unsubscribeRooms();
+            unsubscribeInventory();
+            unsubscribeReports();
+        };
+
+    }, [db, isDataInitialized]); // Depend on db and initial data flag
+
+    const handleLogin = (name, role) => {
+      // Mock login successful, set local user state
+      setUser({name, role});
+      setView('room_panel');
+      showToast(`Selamat datang, ${name}! Anda telah berhasil masuk.`, 'success');
+    };
+
+    const handleLogout = () => {
+        setUser(null); 
+        setView('dashboard');
+        showToast("Anda telah keluar dari sistem.", 'info');
+    };
+
+    // Show loading while data is initializing
+    if (!isAuthReady || !isDataInitialized || !db) {
+      return (
+        <div className="flex h-screen w-screen items-center justify-center bg-f0f9ff">
+          <Loader2 className="animate-spin text-blue-500" size={48} />
+          <p className="ml-4 font-bold text-slate-600">Memuat data...</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex h-screen w-screen overflow-hidden">
+          <style>{COLORFUL_THEME}</style>
+          <div className="colorful-bg"></div>
+          <Sidebar activeView={view} onViewChange={setView} user={user} onLogout={handleLogout}/>
+          <div className="flex-1 h-full relative overflow-hidden flex flex-col">
+              <div className="flex-1 overflow-y-auto w-full">
+                {view === 'dashboard' && <Dashboard reports={reports} inventory={inventory} rooms={rooms}/>}
+                {view === 'login' && <LoginView onLogin={handleLogin} rooms={rooms} showToast={showToast}/>}
+                {view === 'room_panel' && user && (
+                    <PanelInput 
+                      user={user} 
+                      db={db}
+                      rooms={rooms} 
+                      setRooms={setRooms} 
+                      inventory={inventory} 
+                      reports={reports} 
+                      onBack={() => setView('dashboard')} 
+                      onLogout={handleLogout}
+                      showConfirm={showConfirm} 
+                      showToast={showToast}
+                    />
+                )}
+              </div>
+          </div>
+          <MobileNav activeView={view} onViewChange={setView} user={user}/>
+
+          {/* MODAL & TOAST GLOBAL */}
+          <ConfirmModal 
+            isOpen={confirmModal.isOpen}
+            title={confirmModal.title}
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onClose={confirmModal.onClose}
+            type={confirmModal.type}
+          />
+          <ToastNotification toast={toast} setToast={setToast} />
+      </div>
+    );
+};
+
+export default App;
