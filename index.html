@@ -7,139 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, collection, addDoc, onSnapshot, updateDoc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // KONFIGURASI FIREBASE ASLI RSUD LEBONG (Penting untuk GitHub)
-        const firebaseConfig = {
-            apiKey: "AIzaSyCcMsPH50FNflMo5UuHTOGNG-Wa3bFQ3qM",
-            authDomain: "rsud-lebong-portal.firebaseapp.com",
-            projectId: "rsud-lebong-portal",
-            storageBucket: "rsud-lebong-portal.firebasestorage.app",
-            messagingSenderId: "1035852112596",
-            appId: "1:1035852112596:web:abdb442a8adc46a96b9141",
-            measurementId: "G-KLN4YW2RXE"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = 'rsud-lebong-portal';
-
-        window.AppState = {
-            reports: [],
-            rooms: [],
-            authConfig: { adminUser: 'admin', adminPass: 'admin', staffUser: 'petugas', staffPass: 'petugas' },
-            currentUser: null,
-            isProcessing: false,
-            dbConnected: false
-        };
-
-        // Fungsi Indikator Status Koneksi
-        const updateStatusUI = (status, color) => {
-            const el = document.getElementById('db-status');
-            if (el) {
-                el.innerHTML = `<span class="h-2 w-2 rounded-full ${color} animate-pulse mr-2"></span>${status}`;
-            }
-        };
-
-        window.AuthManager = {
-            init: async () => {
-                try {
-                    await signInAnonymously(auth);
-                } catch (error) {
-                    console.error("Auth Error:", error);
-                    updateStatusUI("Offline", "bg-red-500");
-                    window.UIManager.notify("Koneksi Terganggu", false);
-                }
-            },
-            checkLogin: (username, password) => {
-                const conf = window.AppState.authConfig;
-                if (username === conf.adminUser && password === conf.adminPass) return 'ADMIN';
-                if (username === conf.staffUser && password === conf.staffPass) return 'STAFF';
-                return null;
-            }
-        };
-
-        window.DataManager = {
-            setupListeners: () => {
-                const reportsCol = collection(db, 'artifacts', appId, 'public', 'data', 'reports');
-                onSnapshot(reportsCol, (snapshot) => {
-                    window.AppState.reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    window.AppState.dbConnected = true;
-                    updateStatusUI("Online", "bg-emerald-500");
-                    if (window.UIManager.currentView === 'ADMIN_DASHBOARD') window.UIManager.renderAdminTable();
-                }, (err) => {
-                    console.error("Firestore Error:", err);
-                    updateStatusUI("Akses Terbatas", "bg-amber-500");
-                });
-
-                const settingsDoc = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general');
-                onSnapshot(settingsDoc, (snapshot) => {
-                    if (snapshot.exists()) {
-                        const data = snapshot.data();
-                        if (data.rooms) window.AppState.rooms = data.rooms;
-                        if (data.auth) window.AppState.authConfig = data.auth;
-                    } else {
-                        setDoc(settingsDoc, { 
-                            rooms: ['IGD', 'ICU', 'Rawat Inap A', 'Rawat Inap B', 'OK (Kamar Bedah)', 'Poliklinik', 'Farmasi', 'Laboratorium'],
-                            auth: window.AppState.authConfig
-                        });
-                    }
-                    window.UIManager.syncUI();
-                    if (window.UIManager.currentView === 'ADMIN_SETTINGS') window.UIManager.renderSettingsRoomList();
-                });
-            },
-            addReport: async (data) => {
-                if (window.AppState.isProcessing) return;
-                window.AppState.isProcessing = true;
-                try {
-                    const col = collection(db, 'artifacts', appId, 'public', 'data', 'reports');
-                    await addDoc(col, { ...data, createdAt: new Date().toISOString() });
-                    return true;
-                } catch (e) { return false; } 
-                finally { window.AppState.isProcessing = false; }
-            },
-            updateReport: async (id, newData) => {
-                try {
-                    const d = doc(db, 'artifacts', appId, 'public', 'data', 'reports', id);
-                    await updateDoc(d, newData);
-                    return true;
-                } catch (e) { return false; }
-            },
-            deleteReport: async (id) => {
-                try {
-                    const d = doc(db, 'artifacts', appId, 'public', 'data', 'reports', id);
-                    await deleteDoc(d);
-                    return true;
-                } catch (e) { return false; }
-            },
-            updateSettings: async (newData) => {
-                try {
-                    const d = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general');
-                    await updateDoc(d, newData);
-                    return true;
-                } catch (e) { return false; }
-            }
-        };
-
-        onAuthStateChanged(auth, (user) => {
-            window.AppState.currentUser = user;
-            if (user) {
-                window.DataManager.setupListeners();
-            } else {
-                updateStatusUI("Offline", "bg-red-500");
-                window.AuthManager.init();
-            }
-        });
-    </script>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
-    
     <style>
         :root {
             --primary: #3b82f6;
@@ -154,7 +21,6 @@
             color: #f8fafc;
             min-height: 100vh;
             scroll-behavior: smooth;
-            overflow-x: hidden;
         }
 
         .serif-font { font-family: 'Playfair Display', serif; }
@@ -163,14 +29,12 @@
             background: var(--glass);
             backdrop-filter: blur(16px);
             border: 1px solid var(--border);
-            transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
         }
 
         .card-hover:hover {
-            transform: translateY(-8px);
+            transform: translateY(-5px);
             background: rgba(255, 255, 255, 0.07);
             border-color: rgba(59, 130, 246, 0.3);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
 
         .text-gradient {
@@ -181,17 +45,13 @@
 
         .blob {
             position: fixed;
-            width: 800px;
-            height: 800px;
-            background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0) 70%);
+            width: 60vw;
+            height: 60vw;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.07) 0%, rgba(59, 130, 246, 0) 70%);
             border-radius: 50%;
             z-index: -1;
-            filter: blur(60px);
+            filter: blur(80px);
             pointer-events: none;
-        }
-
-        .view-transition {
-            animation: fadeIn 0.6s ease-out;
         }
 
         @keyframes fadeIn {
@@ -199,376 +59,117 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* Marquee Animation */
+        .view-transition { animation: fadeIn 0.5s ease-out forwards; }
+
         @keyframes marquee {
             0% { transform: translateX(100%); }
             100% { transform: translateX(-100%); }
         }
-        .animate-marquee {
-            animation: marquee 50s linear infinite;
-        }
-
-        input, select, textarea {
-            transition: all 0.3s ease;
-            background: rgba(15, 23, 42, 0.6) !important;
-        }
-
-        input:focus, select:focus, textarea:focus {
-            border-color: var(--primary) !important;
-            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
-            outline: none;
-        }
-
-        input[type="date"] {
-            color-scheme: dark;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar { height: 6px; width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .animate-marquee { animation: marquee 40s linear infinite; }
     </style>
 </head>
 <body class="flex flex-col antialiased">
 
-    <div class="blob top-[-200px] right-[-200px]"></div>
-    <div class="blob bottom-[-200px] left-[-200px]" style="background: radial-gradient(circle, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0) 70%);"></div>
+    <div class="blob top-[-10%] right-[-10%]"></div>
+    <div class="blob bottom-[-10%] left-[-10%]" style="background: radial-gradient(circle, rgba(16, 185, 129, 0.04) 0%, rgba(16, 185, 129, 0) 70%);"></div>
 
-    <!-- 0. NEWS TICKER (TOP) -->
-    <div class="w-full bg-slate-900/40 border-b border-white/5 py-2 overflow-hidden z-[110] relative backdrop-blur-md">
+    <!-- News Ticker -->
+    <div class="w-full bg-slate-950/60 border-b border-white/5 py-2.5 overflow-hidden z-[110] backdrop-blur-md">
         <div class="whitespace-nowrap animate-marquee inline-block">
             <span class="text-[10px] font-black uppercase tracking-[0.25em] text-blue-400 mx-10">Selamat Datang di Portal Terpadu RSUD Lebong</span>
             <span class="text-white/20 mx-2">•</span>
-            <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300 mx-10">Mengedepankan Integritas dan Kualitas Pelayanan Publik</span>
+            <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300 mx-10">Sistem Informasi Terintegrasi: Manajemen Aset, Informasi Pasien, dan Peningkatan Mutu</span>
             <span class="text-white/20 mx-2">•</span>
-            <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300 mx-10">Sistem Informasi Terintegrasi: Manajemen Aset, Informasi Pasien, dan Peningkatan Mutu Pelayanan</span>
-            <span class="text-white/20 mx-2">•</span>
-            <span class="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400 mx-10">Rumah Sakit Umum Daerah Lebong: Setulus Hati Kami Melayani</span>
+            <span class="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400 mx-10">Setulus Hati Kami Melayani</span>
         </div>
     </div>
 
-    <!-- Navigation Bar -->
-    <nav class="sticky top-0 z-[100] modern-glass border-b border-white/5 py-4 px-6 lg:px-16">
-        <div class="max-w-[1600px] mx-auto flex justify-between items-center">
-            <div class="flex items-center space-x-5 cursor-pointer group" onclick="UIManager.showView('HOME')">
-                <div class="h-11 w-11 lg:h-12 lg:w-12 bg-white rounded-2xl flex items-center justify-center text-slate-900 shadow-xl group-hover:rotate-12 transition-transform duration-500">
-                    <svg viewBox="0 0 24 24" class="h-6 w-6 lg:h-7 lg:w-7 fill-current"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 15l-4.5-4.5 1.41-1.41L12 15.17l6.59-6.59L20 10l-8 8z"/></svg>
+    <!-- Navigation -->
+    <nav class="sticky top-0 z-[100] modern-glass border-b border-white/5 py-4 px-6 lg:px-12">
+        <div class="max-w-[1400px] mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-4 cursor-pointer group" onclick="UIManager.showView('HOME')">
+                <div class="h-10 w-10 bg-white rounded-xl flex items-center justify-center text-slate-900 shadow-xl group-hover:rotate-6 transition-transform">
+                    <svg viewBox="0 0 24 24" class="h-6 w-6 fill-current"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 15l-4.5-4.5 1.41-1.41L12 15.17l6.59-6.59L20 10l-8 8z"/></svg>
                 </div>
-                <div>
-                    <span class="text-[10px] font-black tracking-[0.4em] uppercase text-blue-400/80 block mb-0.5 leading-none">Portal Layanan Digital</span>
-                    <span class="text-sm lg:text-lg font-bold text-white uppercase tracking-wider block leading-none">Rumah Sakit Umum Daerah Lebong</span>
+                <div class="hidden sm:block">
+                    <span class="text-[9px] font-black tracking-[0.3em] uppercase text-blue-400/80 block leading-none mb-1">Portal Layanan Digital</span>
+                    <span class="text-sm font-bold text-white uppercase tracking-wider block leading-none">RSUD Lebong</span>
                 </div>
             </div>
             
-            <div class="flex items-center gap-4">
-                <!-- Status Koneksi (Hanya Online/Offline) -->
-                <div id="db-status" class="flex items-center text-[9px] font-black uppercase tracking-widest text-slate-400 bg-black/20 px-4 py-2 rounded-full border border-white/5">
-                    <span class="h-2 w-2 rounded-full bg-slate-600 mr-2"></span>Menghubungkan...
-                </div>
-                <div id="live-time" class="hidden md:flex items-center text-xs font-semibold text-slate-400 bg-white/5 px-6 py-2.5 rounded-full border border-white/10 shadow-sm">
-                    Memuat Waktu...
+            <div class="flex items-center gap-3">
+                <div id="live-time" class="hidden md:block text-[10px] font-bold text-slate-400 bg-white/5 px-4 py-2 rounded-lg border border-white/5">
+                    Memuat...
                 </div>
             </div>
         </div>
     </nav>
 
-    <!-- 1. HOME DASHBOARD -->
-    <main id="mainDashboard" class="view-transition flex-grow container mx-auto px-6 py-16 lg:py-24 max-w-[1400px]">
-        <div class="text-center mb-20 lg:mb-28">
-            <div class="inline-flex items-center px-5 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-[11px] font-bold uppercase tracking-[0.2em] mb-8">
-                Sistem Informasi Kesehatan Terintegrasi
+    <!-- Home Dashboard -->
+    <main id="mainDashboard" class="view-transition flex-grow container mx-auto px-6 py-12 lg:py-20 max-w-[1200px]">
+        <div class="text-center mb-16">
+            <div class="inline-flex items-center px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-[10px] font-bold uppercase tracking-[0.2em] mb-6">
+                Integrated Health Information System
             </div>
-            <h1 class="serif-font text-4xl md:text-5xl lg:text-6xl xl:text-7xl text-white mb-8 font-black tracking-tight leading-[1.15]">
-                <span class="md:block">INTEGRASI DATA DAN</span> 
-                <span class="text-gradient italic md:block">LAYANAN DIGITAL RUMAH SAKIT</span>
+            <h1 class="serif-font text-4xl md:text-6xl text-white mb-6 font-black tracking-tight leading-tight">
+                Integrasi Data & <br><span class="text-gradient italic">Layanan Digital RSUD</span>
             </h1>
-            <p class="max-w-4xl mx-auto text-slate-400 text-sm md:text-lg font-medium leading-relaxed tracking-wide text-center">
-                Satu portal terintegrasi untuk pengelolaan data laporan, mutu pelayanan, informasi pasien, dan manajemen aset RSUD Lebong.
+            <p class="max-w-2xl mx-auto text-slate-400 text-sm md:text-base font-medium leading-relaxed">
+                Pusat kendali layanan informasi manajemen aset, data pasien, dan instrumen peningkatan mutu pelayanan dalam satu platform terpadu.
             </p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-10">
-            <a href="https://simas-rsud-lebong.web.app" target="_blank" class="group modern-glass card-hover rounded-[2.5rem] p-10 flex flex-col items-center text-center">
-                <div class="icon-container mb-8 mt-6">
-                    <div class="h-20 w-20 rounded-3xl bg-blue-500/10 flex items-center justify-center text-blue-400 group-hover:bg-blue-500 group-hover:text-white transition-all duration-500 shadow-lg">
-                        <svg class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                    </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+            <!-- SIMAS -->
+            <a href="https://simas-rsud-lebong.web.app" target="_blank" class="group modern-glass card-hover rounded-3xl p-8 flex flex-col items-center text-center transition-all">
+                <div class="h-16 w-16 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 mb-6 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                    <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                 </div>
-                <h2 class="serif-font text-3xl text-white mb-4 font-bold group-hover:text-blue-300 transition-colors">SIMAS</h2>
-                <p class="text-sm text-slate-400 font-medium leading-relaxed mb-8 h-12 overflow-hidden text-center">Sistem Informasi Manajemen Aset untuk pengelolaan aset terpadu.</p>
-                <span class="w-full py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-xs font-black uppercase tracking-[0.2em] group-hover:bg-blue-600 group-hover:border-blue-500 transition-all text-center">Akses SIMAS ›</span>
+                <h2 class="serif-font text-2xl text-white mb-3 font-bold group-hover:text-blue-300 transition-colors">SIMAS</h2>
+                <p class="text-xs text-slate-400 font-medium mb-8">Sistem Informasi Manajemen Aset untuk pengelolaan inventaris terpadu.</p>
+                <div class="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-[0.2em] group-hover:bg-blue-600 transition-all">Akses SIMAS ›</div>
             </a>
 
-            <a href="https://sipas-rsud-lebong-e6a43.web.app" target="_blank" class="group modern-glass card-hover rounded-[2.5rem] p-10 flex flex-col items-center text-center">
-                <div class="icon-container mb-8 mt-6">
-                    <div class="h-20 w-20 rounded-3xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-all duration-500 shadow-lg">
-                        <svg class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1.01 0 01.707.293l5.414 5.414a1 1.01 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                    </div>
+            <!-- SIPAS -->
+            <a href="https://sipas-rsud-lebong-e6a43.web.app" target="_blank" class="group modern-glass card-hover rounded-3xl p-8 flex flex-col items-center text-center transition-all">
+                <div class="h-16 w-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 mb-6 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                    <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1.01 0 01.707.293l5.414 5.414a1 1.01 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                 </div>
-                <h2 class="serif-font text-3xl text-white mb-4 font-bold group-hover:text-emerald-300 transition-colors">SIPAS</h2>
-                <p class="text-sm text-slate-400 font-medium leading-relaxed mb-8 h-12 overflow-hidden text-center">Sistem Informasi Pasien guna mendukung efektivitas pelayanan internal.</p>
-                <span class="w-full py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-xs font-black uppercase tracking-[0.2em] group-hover:bg-emerald-600 group-hover:border-emerald-500 transition-all text-center">Akses SIPAS ›</span>
+                <h2 class="serif-font text-2xl text-white mb-3 font-bold group-hover:text-emerald-300 transition-colors">SIPAS</h2>
+                <p class="text-xs text-slate-400 font-medium mb-8">Sistem Informasi Pasien guna mendukung efektivitas rekam data internal.</p>
+                <div class="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-[0.2em] group-hover:bg-emerald-600 transition-all">Akses SIPAS ›</div>
             </a>
 
-            <div onclick="UIManager.showView('PMKP_MENU')" class="group modern-glass card-hover rounded-[2.5rem] p-10 flex flex-col items-center text-center cursor-pointer">
-                <div class="icon-container mb-8 mt-6">
-                    <div class="h-20 w-20 rounded-3xl bg-amber-500/10 flex items-center justify-center text-amber-400 group-hover:bg-amber-500 group-hover:text-white transition-all duration-500 shadow-lg">
-                        <svg class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-                    </div>
+            <!-- PMKP -->
+            <div onclick="UIManager.showView('PMKP_MENU')" class="group modern-glass card-hover rounded-3xl p-8 flex flex-col items-center text-center cursor-pointer transition-all">
+                <div class="h-16 w-16 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-400 mb-6 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                    <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 </div>
-                <h2 class="serif-font text-3xl text-white mb-4 font-bold group-hover:text-amber-300 transition-colors text-center w-full">PMKP</h2>
-                <p class="text-sm text-slate-400 font-medium leading-relaxed mb-8 h-12 overflow-hidden text-center">Peningkatan Mutu & Keselamatan Pasien mencakup indikator mutu dan insiden.</p>
-                <span class="w-full py-4 rounded-2xl bg-white/5 border border-white/10 text-white text-xs font-black uppercase tracking-[0.2em] group-hover:bg-amber-600 group-hover:border-amber-500 transition-all text-center">AKSES PMKP ›</span>
+                <h2 class="serif-font text-2xl text-white mb-3 font-bold group-hover:text-amber-300 transition-colors">PMKP</h2>
+                <p class="text-xs text-slate-400 font-medium mb-8">Peningkatan Mutu & Keselamatan Pasien mencakup berbagai instrumen mutu.</p>
+                <div class="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-[0.2em] group-hover:bg-amber-600 transition-all">Akses PMKP ›</div>
             </div>
         </div>
     </main>
 
-    <!-- 1.1 PMKP SUB-MENU VIEW -->
-    <main id="pmkpMenuView" class="hidden view-transition flex-grow container mx-auto px-6 py-16 lg:py-20 max-w-[1400px]">
-        <div class="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/5 pb-10">
+    <!-- PMKP Sub-Menu -->
+    <main id="pmkpMenuView" class="hidden view-transition flex-grow container mx-auto px-6 py-12 max-w-[1200px]">
+        <div class="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/5 pb-8">
             <div>
-                <button onclick="UIManager.showView('HOME')" class="text-slate-500 hover:text-white flex items-center text-xs font-black uppercase tracking-[0.3em] group transition-all mb-4">
-                    <svg class="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg> Kembali ke Beranda
+                <button onclick="UIManager.showView('HOME')" class="text-slate-500 hover:text-white flex items-center text-[10px] font-black uppercase tracking-widest mb-3 transition-colors">
+                    <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg> Kembali ke Beranda
                 </button>
-                <h2 class="serif-font text-4xl lg:text-6xl text-white font-black tracking-tight">Layanan Strategis <span class="text-gradient">PMKP</span></h2>
+                <h2 class="serif-font text-4xl text-white font-black tracking-tight">Layanan Strategis <span class="text-gradient">PMKP</span></h2>
             </div>
-            <p class="max-w-md text-slate-400 text-sm font-medium text-right italic leading-relaxed">
-                Integrasi instrumen mutu, kepuasan masyarakat, dan keselamatan pasien dalam satu kendali digital.
-            </p>
         </div>
-        <div id="pmkpSubGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8"></div>
+        <div id="pmkpSubGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
     </main>
 
-    <!-- 2. IKP FORM VIEW -->
-    <main id="ikpView" class="hidden view-transition flex-grow container mx-auto px-6 py-12 max-w-5xl">
-        <div class="mb-12 flex items-center justify-between">
-            <button onclick="UIManager.showView('PMKP_MENU')" class="text-slate-500 hover:text-white flex items-center text-xs font-black uppercase tracking-[0.3em] group transition-all">
-                <svg class="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg> Kembali ke Menu PMKP
-            </button>
-            <h2 id="ikpFormTitle" class="serif-font text-2xl lg:text-4xl text-white font-black uppercase tracking-tight text-gradient text-center">Laporan Insiden (IKP)</h2>
-        </div>
-
-        <form onsubmit="UIManager.handleIKPSubmit(event)" id="ikpForm" class="space-y-10">
-            <input type="hidden" id="editingReportId">
-            <div class="modern-glass rounded-[2.5rem] p-10 lg:p-14 space-y-10">
-                <div class="flex items-center gap-4 border-b border-white/5 pb-6">
-                    <div class="h-8 w-1 bg-blue-500 rounded-full"></div>
-                    <h3 class="text-white font-black text-xs uppercase tracking-[0.3em]">Identitas Pasien & Unit Pelayanan</h3>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div class="space-y-3">
-                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1">Nama Lengkap Pasien</label>
-                        <input type="text" id="namaPasien" required placeholder="Input sesuai KTP atau RM" class="w-full px-6 py-5 rounded-xl border border-white/10 text-white text-base font-semibold">
-                    </div>
-                    <div class="space-y-3">
-                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1">Nomor Rekam Medis (RM)</label>
-                        <input type="text" id="noRM" required placeholder="Contoh: 12-34-56" class="w-full px-6 py-5 rounded-xl border border-white/10 text-white text-base font-semibold">
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div class="space-y-3">
-                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1">Petugas Pelapor</label>
-                        <input type="text" id="namaPetugas" required placeholder="Nama lengkap petugas pelapor" class="w-full px-6 py-5 rounded-xl border border-white/10 text-white text-base font-semibold">
-                    </div>
-                    <div class="space-y-3 relative">
-                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1">Unit Lokasi Kejadian</label>
-                        <select id="ruangan" required class="w-full px-6 py-5 rounded-xl border border-white/10 text-white text-base font-semibold appearance-none cursor-pointer"></select>
-                        <div class="absolute right-6 bottom-5 pointer-events-none text-slate-500">
-                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 9l-7 7-7-7" stroke-width="2"/></svg>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div class="space-y-3">
-                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1">Tanggal Insiden</label>
-                        <input type="date" id="tglKejadian" required class="w-full px-6 py-5 rounded-xl border border-white/10 text-white text-base font-semibold">
-                    </div>
-                    <div class="space-y-3">
-                        <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1">Waktu Kejadian</label>
-                        <div class="flex items-center gap-3">
-                            <div class="flex-grow flex flex-col gap-1 text-center">
-                                <span class="text-[8px] font-black text-slate-500 uppercase tracking-[0.1em]">JAM</span>
-                                <select id="jamKejadian" required class="w-full px-4 py-5 rounded-xl border border-white/10 text-white text-center font-bold"></select>
-                            </div>
-                            <span class="text-white font-bold text-xl self-end mb-5">:</span>
-                            <div class="flex-grow flex flex-col gap-1 text-center">
-                                <span class="text-[8px] font-black text-slate-500 uppercase tracking-[0.1em]">MENIT</span>
-                                <select id="menitKejadian" required class="w-full px-4 py-5 rounded-xl border border-white/10 text-white text-center font-bold"></select>
-                            </div>
-                            <span class="text-slate-400 font-bold ml-1 self-end mb-6 text-xs tracking-tighter">WIB</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="modern-glass rounded-[2.5rem] p-10 lg:p-14 space-y-10">
-                <div class="flex items-center gap-4 border-b border-white/5 pb-6">
-                    <div class="h-8 w-1 bg-emerald-500 rounded-full"></div>
-                    <h3 class="text-white font-black text-xs uppercase tracking-[0.3em]">Klasifikasi & Kronologi Insiden</h3>
-                </div>
-                <div id="insidenOptions" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"></div>
-                <div class="space-y-3">
-                    <label class="text-[10px] text-slate-400 font-black uppercase tracking-widest ml-1">Kronologi Lengkap Kejadian</label>
-                    <textarea id="kronologi" rows="6" required placeholder="Deskripsikan detail kejadian secara urut dan objektif..." class="w-full px-8 py-6 rounded-3xl border border-white/10 text-white text-base font-medium leading-relaxed"></textarea>
-                </div>
-            </div>
-            
-            <button type="submit" id="btnSubmit" class="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white font-black py-7 rounded-3xl text-sm uppercase tracking-[0.4em] shadow-2xl hover:scale-[1.01] active:scale-95 transition-all text-center">Kirim Laporan ke Sistem</button>
-        </form>
-    </main>
-
-    <!-- 3. ADMIN DASHBOARD -->
-    <main id="adminDashboard" class="hidden view-transition flex-grow container mx-auto px-6 py-12 lg:py-16 max-w-[1500px]">
-        <div class="mb-12 flex flex-col lg:flex-row lg:items-end justify-between gap-8">
-            <div class="text-left">
-                <button onclick="UIManager.showView('HOME')" class="text-slate-500 hover:text-white flex items-center text-xs font-black uppercase tracking-[0.3em] mb-4 group transition-all">
-                    <svg class="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg> Keluar Panel Admin
-                </button>
-                <h2 class="serif-font text-4xl lg:text-6xl text-white font-black tracking-tight">Database <span class="text-gradient">Laporan IKP</span></h2>
-            </div>
-            <div class="flex items-center gap-5">
-                <button onclick="UIManager.showView('ADMIN_SETTINGS')" class="bg-white/5 hover:bg-white/10 border border-white/10 px-8 py-4 rounded-2xl flex items-center text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg">
-    <svg class="h-5 w-5 mr-2.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z" />
-        <circle cx="12" cy="12" r="3" />
-    </svg>
-    Konfigurasi
-</button>
-                <div class="bg-blue-600/10 border border-blue-600/20 px-8 py-4 rounded-2xl min-w-[120px] text-center shadow-xl">
-                    <span class="text-[9px] font-black text-blue-400 uppercase block mb-0.5 tracking-widest">Total Data</span>
-                    <span id="reportCount" class="text-2xl font-black text-white">0</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="modern-glass rounded-[2.5rem] overflow-hidden shadow-2xl border-white/5">
-            <div class="overflow-x-auto custom-scrollbar">
-                <table class="w-full text-left border-collapse min-w-[1100px]">
-                    <thead>
-                        <tr class="bg-white/5 border-b border-white/5 text-[10px] font-black text-blue-400 uppercase tracking-[0.3em]">
-                            <th class="px-10 py-7">Waktu Insiden</th>
-                            <th class="px-10 py-7">Identitas Pasien</th>
-                            <th class="px-10 py-7">Unit Pelayanan</th>
-                            <th class="px-10 py-7 text-center">Klasifikasi</th>
-                            <th class="px-10 py-7 text-right">Tindakan</th>
-                        </tr>
-                    </thead>
-                    <tbody id="reportTableBody" class="text-sm font-medium text-slate-200"></tbody>
-                </table>
-            </div>
-        </div>
-    </main>
-
-    <!-- 4. ADMIN SETTINGS -->
-    <main id="adminSettings" class="hidden view-transition flex-grow container mx-auto px-6 py-16 max-w-[1400px]">
-        <div class="mb-12">
-            <button onclick="UIManager.showView('ADMIN_DASHBOARD')" class="text-slate-500 hover:text-white flex items-center text-xs font-black uppercase tracking-[0.3em] mb-4 group transition-all">
-                <svg class="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg> Kembali ke Database
-            </button>
-            <h2 class="serif-font text-4xl lg:text-5xl text-white font-black tracking-tight text-center">Konfigurasi Sistem</h2>
-        </div>
-        
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
-            <div class="modern-glass rounded-[2.5rem] p-10 lg:p-12 shadow-2xl text-left">
-                <h3 class="text-blue-400 font-black text-xs uppercase mb-10 border-b border-white/5 pb-6 tracking-[0.3em]">Manajemen Unit Pelayanan</h3>
-                <div class="flex gap-4 mb-10">
-                    <input type="text" id="newRoomName" placeholder="Ketik nama unit baru..." class="flex-grow rounded-xl px-6 py-4 text-sm font-semibold border border-white/10 text-white">
-                    <button onclick="UIManager.addRoom()" class="bg-blue-600 hover:bg-blue-500 text-white px-8 rounded-xl font-black text-[10px] uppercase shadow-lg transition-all text-center">Tambah</button>
-                </div>
-                <div id="roomList" class="space-y-4 max-h-[500px] overflow-y-auto custom-scrollbar pr-3"></div>
-            </div>
-            
-            <div class="space-y-10">
-                <div class="modern-glass rounded-[2.5rem] p-10 lg:p-12 shadow-2xl text-left">
-                    <h3 class="text-emerald-400 font-black text-xs uppercase mb-8 border-b border-white/5 pb-6 tracking-[0.3em]">Kredensial Administrator</h3>
-                    <form onsubmit="UIManager.updateAuthConfig(event, 'ADMIN')" class="space-y-6">
-                        <input type="text" id="newAdminUser" required class="w-full rounded-xl px-6 py-4 text-sm font-semibold border border-white/10 text-white">
-                        <input type="password" id="newAdminPass" required placeholder="Password baru Administrator" class="w-full rounded-xl px-6 py-4 text-sm font-semibold border border-white/10 text-white">
-                        <button type="submit" class="w-full bg-white text-slate-900 font-black py-4 rounded-xl text-[10px] uppercase tracking-[0.2em] shadow-xl hover:bg-slate-100 transition-all text-center">Update Admin Akun</button>
-                    </form>
-                </div>
-                <div class="modern-glass rounded-[2.5rem] p-10 lg:p-12 shadow-2xl text-left">
-                    <h3 class="text-blue-400 font-black text-xs uppercase mb-8 border-b border-white/5 pb-6 tracking-[0.3em]">Kredensial Akun Petugas</h3>
-                    <form onsubmit="UIManager.updateAuthConfig(event, 'STAFF')" class="space-y-6">
-                        <input type="text" id="newStaffUser" required class="w-full rounded-xl px-6 py-4 text-sm font-semibold border border-white/10 text-white">
-                        <input type="password" id="newStaffPass" required placeholder="Password baru Petugas" class="w-full rounded-xl px-6 py-4 text-sm font-semibold border border-white/10 text-white">
-                        <button type="submit" class="w-full bg-blue-600 text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-[0.2em] shadow-xl hover:bg-blue-50 transition-all text-center">Update Petugas Akun</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <!-- Modals -->
-    <div id="loginModal" class="fixed inset-0 z-[200] hidden flex items-center justify-center p-6 backdrop-blur-3xl bg-slate-900/60">
-        <div class="modern-glass p-12 lg:p-16 rounded-[3.5rem] w-full max-sm:max-w-xs max-w-sm shadow-2xl text-center">
-            <button onclick="UIManager.closeLogin()" class="absolute top-10 right-10 text-slate-500 hover:text-white transition-all">✕</button>
-            <div class="mb-12">
-                <div class="h-20 w-20 bg-blue-500/10 rounded-3xl flex items-center justify-center mx-auto mb-6 text-blue-400">
-                    <svg class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                </div>
-                <h3 class="serif-font text-3xl font-black mb-2 uppercase tracking-tight text-white">Otorisasi</h3>
-                <p class="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Keamanan Terverifikasi</p>
-            </div>
-            <form onsubmit="UIManager.handleLogin(event)" class="space-y-6">
-                <input type="text" id="loginUsername" placeholder="Username" required class="w-full rounded-2xl px-6 py-4 text-base font-semibold text-center border border-white/10 text-white">
-                <input type="password" id="loginPassword" placeholder="Kode Akses" required class="w-full rounded-2xl px-6 py-4 text-base font-semibold text-center border border-white/10 text-white">
-                <button type="submit" class="w-full bg-white text-slate-900 font-black py-4 rounded-2xl text-xs uppercase tracking-[0.4em] shadow-xl hover:bg-blue-50 active:scale-95 transition-all text-center">Verifikasi Masuk</button>
-            </form>
-        </div>
-    </div>
-
-    <div id="confirmModal" class="fixed inset-0 z-[250] hidden flex items-center justify-center p-6 backdrop-blur-2xl bg-slate-900/60">
-        <div class="modern-glass p-12 rounded-[3rem] w-full max-sm:max-w-xs max-w-sm text-center border-red-500/20 shadow-2xl">
-            <h3 class="font-black mb-4 uppercase text-lg tracking-widest text-white">Konfirmasi Hapus</h3>
-            <p id="confirmMessage" class="text-sm text-slate-300 mb-10 font-medium leading-relaxed italic"></p>
-            <div class="grid grid-cols-2 gap-4">
-                <button id="confirmBtn" class="bg-red-600 text-white py-4 rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-red-500 transition-all text-center">Hapus</button>
-                <button onclick="UIManager.closeConfirm()" class="bg-white/5 text-white py-4 rounded-2xl text-xs font-black uppercase transition-all text-center">Batal</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="editRoomModal" class="fixed inset-0 z-[150] hidden flex items-center justify-center p-6 backdrop-blur-2xl bg-slate-900/50 text-white text-center">
-        <div class="modern-glass p-12 rounded-[3.5rem] w-full max-sm:max-w-xs max-w-sm border-blue-500/10 shadow-2xl">
-            <h3 class="font-black mb-8 uppercase text-sm tracking-[0.5em] opacity-90 text-blue-300">Edit Nama Unit</h3>
-            <input type="text" id="editRoomInput" class="w-full rounded-2xl px-6 py-6 text-xl mb-10 font-bold text-center text-white border border-white/10 outline-none">
-            <div class="grid grid-cols-2 gap-5">
-                <button id="saveEditBtn" class="bg-blue-600 text-white py-5 rounded-2xl text-sm font-black uppercase active:scale-95 shadow-lg">Update</button>
-                <button onclick="document.getElementById('editRoomModal').style.display='none'" class="bg-white/5 text-white py-5 rounded-2xl text-sm font-black uppercase transition-all">Batal</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Notification Toast -->
-    <div id="notificationBox" class="hidden fixed bottom-10 right-1/2 translate-x-1/2 md:right-10 md:translate-x-0 z-[300] bg-white text-slate-900 px-8 py-5 rounded-2xl shadow-2xl flex items-center gap-5 border border-white/20">
-        <div id="notifIcon" class="h-6 w-6"></div>
-        <span id="notifMessage" class="text-xs font-black uppercase tracking-[0.2em]"></span>
-    </div>
-
-    <!-- FOOTER SECTION -->
-    <footer class="mt-auto relative overflow-hidden">
-        <div class="h-[2px] w-full bg-gradient-to-r from-transparent via-blue-500/30 to-transparent"></div>
-        <div class="bg-[#010413]/80 backdrop-blur-3xl pt-20 pb-12 px-6 lg:px-16 text-center">
-            <div class="max-w-[1200px] mx-auto">
-                <div class="mb-12">
-                    <h4 class="serif-font text-2xl lg:text-3xl font-black text-white italic tracking-wide mb-2 text-center">Setulus Hati Kami Melayani</h4>
-                    <div class="w-20 h-1 bg-blue-600 mx-auto rounded-full mt-6 opacity-80 shadow-[0_0_15px_rgba(37,99,235,0.5)]"></div>
-                </div>
-                <div class="grid grid-cols-1 gap-1 my-10 text-center">
-                    <p class="text-[10px] lg:text-[11px] font-black uppercase tracking-[0.6em] text-slate-500 mb-2">Dikelola Oleh:</p>
-                    <p class="text-base lg:text-lg font-extrabold text-white tracking-[0.1em] uppercase">Tim Teknologi Informasi</p>
-                    <p class="text-sm lg:text-base font-bold text-blue-400/90 tracking-wide">Rumah Sakit Umum Daerah Lebong</p>
-                </div>
-            </div>
-        </div>
-        <div class="bg-black/40 border-t border-white/5 py-8 text-center px-6">
-            <div class="max-w-[1200px] mx-auto flex flex-col md:flex-row items-center justify-center gap-4 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
-                <p class="opacity-80 text-center">© 2026 Sistem Informasi Terintegrasi RSUD Lebong</p>
-                <span class="hidden md:block opacity-20">•</span>
-                <p class="px-3 py-1 rounded-md bg-white/5 border border-white/10 text-[9px] tracking-normal text-center">Versi 1.0.0</p>
-            </div>
+    <footer class="mt-auto bg-slate-950/40 border-t border-white/5 py-10 px-6 text-center">
+        <div class="max-w-[1200px] mx-auto">
+            <p class="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500 mb-2">Tim Teknologi Informasi</p>
+            <p class="text-sm font-bold text-white uppercase tracking-widest mb-6">RSUD Lebong © 2026</p>
+            <div class="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Integrated Health Services • V1.0.0</div>
         </div>
     </footer>
 
@@ -576,145 +177,36 @@
         window.UIManager = {
             currentView: 'HOME',
             showView: (view) => {
-                const views = { HOME: 'mainDashboard', PMKP_MENU: 'pmkpMenuView', IKP: 'ikpView', ADMIN_DASHBOARD: 'adminDashboard', ADMIN_SETTINGS: 'adminSettings' };
+                const views = { HOME: 'mainDashboard', PMKP_MENU: 'pmkpMenuView' };
                 Object.values(views).forEach(id => { 
                     const el = document.getElementById(id); 
-                    if(el) { el.classList.add('hidden'); el.style.display = 'none'; } 
+                    if(el) el.classList.add('hidden'); 
                 });
                 const target = document.getElementById(views[view]);
-                if(target) { target.classList.remove('hidden'); target.style.display = 'block'; }
+                if(target) target.classList.remove('hidden');
                 window.UIManager.currentView = view;
                 window.scrollTo({ top: 0, behavior: 'smooth' });
                 
                 if (view === 'PMKP_MENU') window.UIManager.renderPMKPGrid();
-                if (view === 'IKP' && !document.getElementById('editingReportId').value) window.UIManager.initIKPForm();
-                if (view === 'ADMIN_DASHBOARD') window.UIManager.renderAdminTable();
-                if (view === 'ADMIN_SETTINGS') window.UIManager.renderSettingsRoomList();
-            },
-            notify: (msg, success = true) => {
-                const box = document.getElementById('notificationBox');
-                const icon = document.getElementById('notifIcon');
-                document.getElementById('notifMessage').innerText = msg;
-                icon.innerHTML = success ? `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-emerald-600" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg>` : `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-red-600" stroke-width="4"><path d="M6 18L18 6M6 6l12 12"/></svg>`;
-                box.classList.remove('hidden'); box.style.display = 'flex';
-                setTimeout(() => { box.classList.add('hidden'); box.style.display = 'none'; }, 3000);
-            },
-            openLogin: () => { document.getElementById('loginModal').classList.remove('hidden'); document.getElementById('loginModal').style.display = 'flex'; },
-            closeLogin: () => { document.getElementById('loginModal').classList.add('hidden'); document.getElementById('loginModal').style.display = 'none'; },
-            closeConfirm: () => { document.getElementById('confirmModal').classList.add('hidden'); document.getElementById('confirmModal').style.display = 'none'; },
-            handleLogin: (e) => {
-                e.preventDefault();
-                const role = window.AuthManager.checkLogin(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
-                if (role === 'ADMIN') { window.UIManager.closeLogin(); window.UIManager.showView('ADMIN_DASHBOARD'); window.UIManager.notify("Otoritas Admin Diterima"); }
-                else if (role === 'STAFF') { window.UIManager.closeLogin(); window.UIManager.showView('IKP'); window.UIManager.notify("Akses Petugas Diberikan"); }
-                else { window.UIManager.notify("Kredensial Tidak Valid", false); }
-                e.target.reset();
             },
             renderPMKPGrid: () => {
                 const grid = document.getElementById('pmkpSubGrid');
                 const items = [
-                    { title: 'Indikator Mutu', desc: 'Akses data pemantauan indikator mutu rumah sakit.', link: 'https://biolink.info//muturslebong', type: 'Eksternal' },
-                    { title: 'SIMMUTU', desc: 'Sistem Informasi Manajemen Mutu Terpadu internal.', link: 'http://172.31.1.2/simmutu', type: 'Internal' },
-                    { title: 'Survey Kepuasan', desc: 'Survey Kepuasan Masyarakat (SKM) secara digital.', link: 'https://rsudlebong.fillout.com/skm', type: 'Survey' },
-                    { title: 'Saluran Pengaduan', desc: 'Formulir resmi pengaduan layanan rumah sakit.', link: 'https://rsudlebong.fillout.com/pengaduan', type: 'Formulir' },
-                    { title: 'Survey Budaya', desc: 'Survey Budaya dan Keselamatan Pasien internal.', link: 'https://rsudlebong.fillout.com//surveibudaya', type: 'Survey' },
-                    { title: 'Pelaporan IKP', desc: 'Sistem Pelaporan Insiden Keselamatan Pasien.', action: 'login', type: 'Keamanan' }
+                    { title: 'Indikator Mutu', desc: 'Data pemantauan indikator mutu RS.', link: 'https://biolink.info//muturslebong', type: 'Eksternal' },
+                    { title: 'SIMMUTU', desc: 'Informasi Manajemen Mutu internal.', link: 'http://172.31.1.2/simmutu', type: 'Internal' },
+                    { title: 'Survey SKM', desc: 'Kepuasan Masyarakat digital.', link: 'https://rsudlebong.fillout.com/skm', type: 'Survey' },
+                    { title: 'Pengaduan', desc: 'Saluran resmi pengaduan layanan.', link: 'https://rsudlebong.fillout.com/pengaduan', type: 'Form' },
+                    { title: 'Survey Budaya', desc: 'Budaya keselamatan pasien.', link: 'https://rsudlebong.fillout.com//surveibudaya', type: 'Survey' }
                 ];
                 grid.innerHTML = items.map(i => `
-                    <div ${i.action ? 'onclick="UIManager.openLogin()"' : `onclick="window.open('${i.link}', '_blank')"`} class="group modern-glass rounded-[2rem] p-8 card-hover cursor-pointer flex flex-col h-full border-white/5 text-left">
-                        <div class="flex justify-between items-start mb-6">
-                            <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">${i.type}</span>
-                        </div>
-                        <h3 class="text-xl font-bold text-white mb-3 group-hover:text-blue-300 transition-colors uppercase tracking-tight">${i.title}</h3>
-                        <p class="text-xs text-slate-400 leading-relaxed mb-8 h-10 overflow-hidden font-medium">${i.desc}</p>
-                        <div class="mt-auto flex items-center text-blue-500 text-[10px] font-black uppercase tracking-[0.2em] group-hover:translate-x-2 transition-transform duration-300">
-                            Buka Layanan <svg class="h-3 w-3 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M9 5l7 7-7 7"/></svg>
+                    <div onclick="window.open('${i.link}', '_blank')" class="group modern-glass rounded-2xl p-6 card-hover cursor-pointer transition-all border-white/5">
+                        <span class="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-4">${i.type}</span>
+                        <h3 class="text-lg font-bold text-white mb-2 group-hover:text-blue-400 transition-colors uppercase">${i.title}</h3>
+                        <p class="text-[11px] text-slate-400 leading-relaxed mb-6">${i.desc}</p>
+                        <div class="text-blue-500 text-[9px] font-black uppercase tracking-widest flex items-center group-hover:translate-x-1 transition-transform">
+                            Open <svg class="h-3 w-3 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M9 5l7 7-7 7"/></svg>
                         </div>
                     </div>`).join('');
-            },
-            syncUI: () => {
-                const s = document.getElementById('ruangan');
-                if (s) { const cur = s.value; s.innerHTML = '<option value="" disabled selected>Pilih Unit Pelayanan</option>'; [...window.AppState.rooms].sort().forEach(r => s.add(new Option(r, r))); if(cur) s.value = cur; }
-                const au = document.getElementById('newAdminUser'); const su = document.getElementById('newStaffUser');
-                if (au) au.value = window.AppState.authConfig.adminUser; if (su) su.value = window.AppState.authConfig.staffUser;
-            },
-            initIKPForm: (editData = null) => {
-                const jS = document.getElementById('jamKejadian'); const mS = document.getElementById('menitKejadian');
-                jS.innerHTML = ''; mS.innerHTML = '';
-                for(let i=0; i<24; i++) jS.add(new Option(i.toString().padStart(2, '0'), i.toString().padStart(2, '0')));
-                for(let i=0; i<60; i++) mS.add(new Option(i.toString().padStart(2, '0'), i.toString().padStart(2, '0')));
-                const types = [
-                    { val: 'KTD', label: 'KTD', desc: 'Kejadian Tidak Diharapkan (KTD): Insiden yang mengakibatkan cedera permanen, cacat, atau kematian pada pasien akibat tindakan medis/non-medis.' },
-                    { val: 'KNC', label: 'KNC', desc: 'Kejadian Nyaris Cedera (KNC): Kesalahan yang berpotensi mencederai pasien, namun diketahui sebelum terpapar.' },
-                    { val: 'KTC', label: 'KTC', desc: 'Kejadian Tidak Cetera (KTC): Insiden sudah terpapar ke pasien, namun tidak mengalami cedera nyata.' },
-                    { val: 'KPC', label: 'KPC', desc: 'Kondisi Potensial Cedera (KPC): Situasi lingkungan kerja yang berpotensi menimbulkan insiden bahaya.' },
-                    { val: 'SENTINEL', label: 'SENTINEL', desc: 'SENTINEL: Kejadian luar biasa yang mengakibatkan kematian mendadak atau cedera serius.', red: true }
-                ];
-                document.getElementById('insidenOptions').innerHTML = types.map(t => `<label class="group relative flex flex-col p-6 modern-glass rounded-2xl cursor-pointer hover:bg-white/10 border-white/5 transition-all text-white text-left"><div class="flex items-center gap-3 mb-4"><input type="radio" name="jenisInsiden" value="${t.val}" required class="w-5 h-5 accent-blue-500"><span class="text-base font-black uppercase tracking-widest ${t.red ? 'text-red-400' : 'text-blue-300'}">${t.label}</span></div><p class="text-[10px] text-slate-400 italic leading-snug font-semibold border-t border-white/5 pt-3">${t.desc}</p></label>`).join('');
-                window.UIManager.syncUI();
-                if(editData) { 
-                    document.getElementById('ikpFormTitle').innerText = "Koreksi Laporan"; document.getElementById('btnSubmit').innerText = "Update Laporan";
-                    document.getElementById('editingReportId').value = editData.id; document.getElementById('namaPasien').value = editData.namaPasien;
-                    document.getElementById('noRM').value = editData.noRM; document.getElementById('namaPetugas').value = editData.namaPetugas;
-                    document.getElementById('ruangan').value = editData.ruangan; document.getElementById('tglKejadian').value = editData.tgl;
-                    const [h, m] = editData.waktu.split(':'); document.getElementById('jamKejadian').value = h; document.getElementById('menitKejadian').value = m;
-                    document.getElementById('kronologi').value = editData.kronologi; const radio = document.querySelector(`input[name="jenisInsiden"][value="${editData.jenis}"]`); if(radio) radio.checked = true;
-                } else { 
-                    document.getElementById('ikpFormTitle').innerText = "Laporan Insiden (IKP)"; document.getElementById('btnSubmit').innerText = "Kirim Laporan ke Sistem";
-                    document.getElementById('editingReportId').value = ''; document.getElementById('ikpForm').reset();
-                }
-            },
-            handleIKPSubmit: async (e) => {
-                e.preventDefault();
-                const btn = document.getElementById('btnSubmit'); const editId = document.getElementById('editingReportId').value;
-                const data = { namaPasien: document.getElementById('namaPasien').value, noRM: document.getElementById('noRM').value, namaPetugas: document.getElementById('namaPetugas').value, ruangan: document.getElementById('ruangan').value, tgl: document.getElementById('tglKejadian').value, waktu: `${document.getElementById('jamKejadian').value}:${document.getElementById('menitKejadian').value}`, jenis: e.target.querySelector('input[name="jenisInsiden"]:checked').value, kronologi: document.getElementById('kronologi').value };
-                btn.disabled = true; btn.innerText = "Memproses...";
-                let success = editId ? await window.DataManager.updateReport(editId, data) : await window.DataManager.addReport(data);
-                if(success) { window.UIManager.notify("Berhasil!"); window.UIManager.showView('HOME'); e.target.reset(); }
-                else { window.UIManager.notify("Gagal!", false); }
-                btn.disabled = false; btn.innerText = "Kirim Laporan ke Sistem";
-            },
-            renderAdminTable: () => {
-                const b = document.getElementById('reportTableBody'); if (!b) return;
-                const reports = [...window.AppState.reports].sort((a,b) => b.createdAt.localeCompare(a.createdAt));
-                document.getElementById('reportCount').innerText = reports.length;
-                b.innerHTML = reports.map((r, i) => `
-                    <tr class="border-b border-white/5 hover:bg-white/5 transition-all text-left">
-                        <td class="px-10 py-7"><div class="font-bold text-white">${r.tgl}</div><div class="text-[10px] text-blue-400 font-black uppercase mt-1 tracking-widest">${r.waktu} WIB</div></td>
-                        <td class="px-10 py-7"><div class="text-base text-white font-black uppercase tracking-tight">${r.namaPasien}</div><div class="text-[10px] text-emerald-400 font-bold uppercase mt-1">NO. RM: ${r.noRM}</div></td>
-                        <td class="px-10 py-7"><div class="text-sm text-slate-100 font-black uppercase tracking-widest">${r.ruangan}</div><div class="text-[10px] text-slate-500 font-bold uppercase mt-1">Oleh: ${r.namaPetugas}</div></td>
-                        <td class="px-10 py-7 text-center"><span class="px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl border border-white/5 ${window.UIManager.getBadgeStyle(r.jenis)}">${r.jenis}</span></td>
-                        <td class="px-10 py-7 text-right">
-                            <div class="flex justify-end gap-2">
-                                <button onclick="UIManager.openEditReport(${i})" class="bg-blue-500/10 text-blue-400 px-3 py-3 rounded-xl hover:bg-blue-600 border border-blue-500/20 shadow-lg"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
-                                <button onclick="UIManager.downloadPDF(${i})" class="bg-emerald-500/10 text-emerald-400 px-4 py-2 rounded-xl font-black text-[10px] uppercase border border-emerald-500/20 shadow-lg">PDF</button>
-                                <button onclick="UIManager.deleteReportWithConfirm(${i})" class="bg-red-500/10 text-red-400 px-3 py-3 rounded-xl hover:bg-red-600 border border-red-500/20 shadow-lg"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1.01 0 00-1-1h-4a1 1.01 0 00-1 1v3M4 7h16"/></svg></button>
-                            </div>
-                        </td>
-                    </tr>`).join('');
-            },
-            getBadgeStyle: (j) => { const map = { SENTINEL: 'bg-red-500/20 text-red-300', KTD: 'bg-orange-500/20 text-orange-300', KNC: 'bg-blue-500/20 text-blue-300', KTC: 'bg-emerald-500/20 text-emerald-300' }; return map[j] || 'bg-slate-500/20 text-slate-300'; },
-            renderSettingsRoomList: () => { const l = document.getElementById('roomList'); if (!l) return; l.innerHTML = [...window.AppState.rooms].sort().map(r => `<div class="flex items-center justify-between p-6 bg-white/5 border border-white/5 rounded-2xl hover:border-blue-500/30 transition-all text-left"><span class="text-sm font-bold tracking-wide text-white uppercase">${r}</span><div class="flex gap-3"><button onclick="UIManager.openEditRoom('${r}')" class="bg-blue-500/10 text-blue-400 p-3 rounded-xl hover:bg-blue-600 shadow-lg border border-blue-500/10"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button><button onclick="UIManager.deleteRoomWithConfirm('${r}')" class="bg-red-500/10 text-red-400 p-3 rounded-xl hover:bg-red-600 shadow-lg border border-red-500/10"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1.01 0 00-1-1h-4a1 1.01 0 00-1 1v3M4 7h16"/></svg></button></div></div>`).join(''); },
-            openEditRoom: (n) => {
-                const modal = document.getElementById('editRoomModal'); const input = document.getElementById('editRoomInput'); input.value = n; modal.style.display = 'flex'; modal.classList.remove('hidden');
-                document.getElementById('saveEditBtn').onclick = async () => { const newVal = input.value.trim(); if(newVal && newVal !== n) { if(await window.DataManager.updateSettings({ rooms: window.AppState.rooms.map(r => r === n ? newVal : r) })) { modal.style.display = 'none'; window.UIManager.notify("Diperbarui"); } } else { modal.style.display = 'none'; } };
-            },
-            addRoom: async () => { const n = document.getElementById('newRoomName').value.trim(); if (n && !window.AppState.rooms.includes(n)) { if(await window.DataManager.updateSettings({ rooms: [...window.AppState.rooms, n] })) { document.getElementById('newRoomName').value = ''; window.UIManager.notify("Ditambah"); } } },
-            deleteRoomWithConfirm: (n) => { const modal = document.getElementById('confirmModal'); document.getElementById('confirmMessage').innerHTML = `Hapus permanent unit <br><b class="text-white uppercase text-lg">${n}</b>?`; modal.style.display = 'flex'; modal.classList.remove('hidden'); document.getElementById('confirmBtn').onclick = async () => { if(await window.DataManager.updateSettings({ rooms: window.AppState.rooms.filter(r => r !== n) })) { window.UIManager.closeConfirm(); window.UIManager.notify("Dihapus"); } }; },
-            updateAuthConfig: async (e, type) => { e.preventDefault(); let newAuth = { ...window.AppState.authConfig }; if (type === 'ADMIN') { newAuth.adminUser = document.getElementById('newAdminUser').value.trim(); newAuth.adminPass = document.getElementById('newAdminPass').value.trim(); } else { newAuth.staffUser = document.getElementById('newStaffUser').value.trim(); newAuth.staffPass = document.getElementById('newStaffPass').value.trim(); } if(await window.DataManager.updateSettings({ auth: newAuth })) window.UIManager.notify(`${type} Diperbarui`); },
-            downloadPDF: (i) => {
-                const r = [...window.AppState.reports].sort((a,b) => b.createdAt.localeCompare(a.createdAt))[i];
-                const { jsPDF } = window.jspdf; const doc = new jsPDF();
-                const today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-                doc.setFont("helvetica", "bold").setFontSize(13).text("PEMERINTAH KABUPATEN LEBONG", 105, 15, { align: "center" });
-                doc.setFontSize(16).text("RUMAH SAKIT UMUM DAERAH", 105, 23, { align: "center" });
-                doc.setFont("helvetica", "normal").setFontSize(9).text("Jl. Muara Aman-Curup Desa Muning Agung Kec. Lebong Sakti Kab. Lebong 39163", 105, 30, { align: "center" });
-                doc.text("Email : rsudlebong20@gmail.com", 105, 35, { align: "center" });
-                doc.setLineWidth(0.8).line(20, 39, 190, 39); doc.setLineWidth(0.2).line(20, 40, 190, 40);
-                doc.setFont("helvetica", "bold").setFontSize(11).text("LAPORAN INSIDEN KESELAMATAN PASIEN (IKP)", 105, 50, { align: "center" });
-                doc.autoTable({ startY: 58, head: [['Variabel Laporan', 'Detail Data']], body: [['Nama Pasien', r.namaPasien], ['Nomor RM', r.noRM], ['Nama Petugas', r.namaPetugas], ['Unit / Ruangan', r.ruangan], ['Tanggal Kejadian', r.tgl], ['Waktu Kejadian', `${r.waktu} WIB`], ['Klasifikasi', r.jenis], ['Kronologi', r.kronologi]], theme: 'grid', styles: { fontSize: 10, cellPadding: 6, lineColor: [40, 40, 40], lineWidth: 0.2, valign: 'middle' }, headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' }, columnStyles: { 0: { fontStyle: 'bold', width: 50, fillColor: [245, 247, 250] }, 1: { width: 'auto' } } });
-                const finalY = doc.lastAutoTable.finalY + 20; doc.setFontSize(10).text(`Lebong, ${today}`, 160, finalY, { align: "center" }); doc.text("Petugas Pelapor,", 160, finalY + 6, { align: "center" }); doc.setFont("helvetica", "bold").text(`( ${r.namaPetugas} )`, 160, finalY + 30, { align: "center" });
-                doc.save(`IKP_LEBONG_${r.namaPasien.replace(/\s+/g, '_')}.pdf`);
             }
         };
 
@@ -722,15 +214,11 @@
             const d = document.getElementById('live-time');
             if (d) {
                 const n = new Date();
-                const timeStr = `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}:${n.getSeconds().toString().padStart(2, '0')}`;
-                const dateStr = n.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-                d.innerHTML = `Sistem <span class="text-blue-400 font-bold mx-2">${timeStr}</span> <span class="opacity-20 mx-2">|</span> ${dateStr}`;
+                d.innerText = n.toLocaleTimeString('id-ID') + " | " + n.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
             }
         }, 1000);
         
-        window.onload = () => { window.UIManager.syncUI(); window.UIManager.showView('HOME'); };
+        window.onload = () => { window.UIManager.showView('HOME'); };
     </script>
 </body>
 </html>
-
-
