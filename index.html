@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Layanan Digital RSUD Lebong</title>
     
-    <!-- Dependencies -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
@@ -32,14 +31,12 @@
 
         .serif-font { font-family: 'Playfair Display', serif; }
 
-        /* Modern Glassmorphism */
         .modern-glass {
             background: var(--glass);
             backdrop-filter: blur(16px);
             border: 1px solid var(--border);
         }
 
-        /* Nav & Card Hovers */
         .card-hover:hover {
             transform: translateY(-5px);
             background: rgba(255, 255, 255, 0.07);
@@ -52,7 +49,6 @@
             -webkit-text-fill-color: transparent;
         }
 
-        /* Animations */
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -65,7 +61,6 @@
         }
         .animate-marquee { animation: marquee 40s linear infinite; }
 
-        /* Indikator Mutu Unit Card Custom Styles */
         .unit-card {
             text-decoration: none;
             display: flex;
@@ -120,7 +115,28 @@
             box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
         }
 
-        /* Decorative Blobs */
+        /* Category Tabs Styling */
+        .category-tab {
+            padding: 8px 18px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            transition: all 0.3s ease;
+            border: 1px solid var(--border);
+            color: #64748b;
+            cursor: pointer;
+            background: rgba(15, 23, 42, 0.4);
+        }
+
+        .category-tab.active {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            border-color: rgba(59, 130, 246, 0.4);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+        }
+
         .blob {
             position: fixed;
             width: 60vw;
@@ -138,7 +154,6 @@
     <div class="blob top-[-10%] right-[-10%]"></div>
     <div class="blob bottom-[-10%] left-[-10%]" style="background: radial-gradient(circle, rgba(16, 185, 129, 0.03) 0%, rgba(16, 185, 129, 0) 70%);"></div>
 
-    <!-- 1. TOP TICKER SECTION -->
     <div class="w-full bg-slate-950/60 border-b border-white/5 py-2.5 overflow-hidden z-[110] backdrop-blur-md">
         <div class="whitespace-nowrap animate-marquee inline-block">
             <span class="text-[10px] font-black uppercase tracking-[0.25em] text-blue-400 mx-10">Selamat Datang di Portal Terpadu RSUD Lebong</span>
@@ -149,10 +164,8 @@
         </div>
     </div>
 
-    <!-- 2. NAVIGATION BAR -->
     <nav class="sticky top-0 z-[100] modern-glass border-b border-white/5 py-3 px-4 lg:px-12">
         <div class="max-w-[1400px] mx-auto flex justify-between items-center gap-2">
-            <!-- Brand Identity -->
             <div class="flex items-center space-x-2 sm:space-x-4 cursor-pointer group" onclick="UIManager.showView('HOME')">
                 <div class="h-9 w-9 sm:h-11 sm:w-11 bg-white rounded-xl flex items-center justify-center text-slate-900 shadow-xl group-hover:rotate-6 transition-transform flex-shrink-0">
                     <svg viewBox="0 0 24 24" class="h-6 w-6 sm:h-7 sm:w-7 fill-current"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 15l-4.5-4.5 1.41-1.41L12 15.17l6.59-6.59L20 10l-8 8z"/></svg>
@@ -162,8 +175,6 @@
                     <span class="text-[11px] sm:text-sm font-bold text-white uppercase tracking-wider block leading-none">RSUD Lebong</span>
                 </div>
             </div>
-            
-            <!-- System Clock -->
             <div class="flex items-center">
                 <div id="live-time" class="text-[8px] sm:text-[10px] font-bold text-slate-300 bg-white/5 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg border border-white/5 whitespace-nowrap">
                     Memuat...
@@ -172,7 +183,6 @@
         </div>
     </nav>
 
-    <!-- 3. HOME VIEW -->
     <main id="mainDashboard" class="view-transition flex-grow container mx-auto px-6 py-12 lg:py-20 max-w-[1200px]">
         <div class="text-center mb-16 lg:mb-24">
             <div class="inline-flex items-center px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-[10px] font-bold uppercase tracking-[0.2em] mb-6">
@@ -209,14 +219,13 @@
                 <div class="h-16 w-16 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-400 mb-6 group-hover:bg-amber-500 group-hover:text-white transition-colors">
                     <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 </div>
-                <h2 class="serif-font text-2xl text-white mb-3 font-bold group-hover:text-amber-300 text-center w-full text-center">PMKP</h2>
+                <h2 class="serif-font text-2xl text-white mb-3 font-bold group-hover:text-amber-300 text-center w-full">PMKP</h2>
                 <p class="text-xs text-slate-400 font-medium mb-8">Peningkatan Mutu & Keselamatan Pasien mencakup berbagai instrumen mutu.</p>
                 <div class="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-[0.2em] group-hover:bg-amber-600 transition-all text-center">Akses PMKP ›</div>
             </div>
         </div>
     </main>
 
-    <!-- 4. PMKP SUB-MENU VIEW -->
     <main id="pmkpMenuView" class="hidden view-transition flex-grow container mx-auto px-6 py-12 max-w-[1200px]">
         <div class="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/5 pb-8 text-left">
             <div>
@@ -229,7 +238,6 @@
         <div id="pmkpSubGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8"></div>
     </main>
 
-    <!-- 5. INDIKATOR MUTU LIST VIEW (GRID ON DESKTOP) -->
     <main id="mutuListView" class="hidden view-transition flex-grow container mx-auto px-4 py-8 md:py-12 max-w-[700px] md:max-w-[1400px]">
         <header class="text-center mb-10 md:mb-16">
             <button onclick="UIManager.showView('PMKP_MENU')" class="text-slate-500 hover:text-white flex items-center text-[10px] font-bold uppercase tracking-[0.3em] mb-8 transition-colors mx-auto group">
@@ -243,6 +251,13 @@
             <p class="text-slate-500 text-xs text-center uppercase tracking-widest mt-1">RSUD Lebong</p>
         </header>
 
+        <div class="flex flex-wrap justify-center gap-2 mb-10 max-w-2xl mx-auto px-4">
+            <div onclick="UIManager.setCategory('ALL')" id="cat-ALL" class="category-tab active">Semua Unit</div>
+            <div onclick="UIManager.setCategory('RANAP')" id="cat-RANAP" class="category-tab">Rawat Inap</div>
+            <div onclick="UIManager.setCategory('KHUSUS')" id="cat-KHUSUS" class="category-tab">Pelayanan Khusus</div>
+            <div onclick="UIManager.setCategory('PENUNJANG')" id="cat-PENUNJANG" class="category-tab">Penunjang</div>
+        </div>
+
         <div class="relative mb-10 md:mb-16 max-w-2xl mx-auto px-2">
             <div class="absolute left-7 top-1/2 -translate-y-1/2 text-slate-500">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -250,205 +265,78 @@
             <input type="text" id="mutuSearchInput" placeholder="Cari unit atau ruangan..." onkeyup="UIManager.filterMutuUnits()" class="search-input-mutu pl-14 text-sm md:text-base font-semibold shadow-2xl">
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 px-2" id="mutuUnitGrid">
-            
-            <!-- Rawat Inap (Bed Icon) -->
-            <a href="https://tinyurl.com/indikatormutuaglonema" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight">AGLONEMA</span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-left">Rawat Inap Penyakit Dalam</span>
-                </div>
-            </a>
-            <a href="https://tinyurl.com/indikatormutualamanda" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight">ALAMANDA</span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-left">Rawat Inap Kebidanan</span>
-                </div>
-            </a>
-            <a href="https://tinyurl.com/indikatormutuasterr" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight">ASTER</span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-left">Rawat Inap Anak</span>
-                </div>
-            </a>
-            <a href="https://tinyurl.com/indikatormutuanggrekk" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight">ANGGREK</span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-left">Rawat Inap Bedah</span>
-                </div>
-            </a>
-            <a href="https://tinyurl.com/indikatormutuazalea" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight">AZALEA</span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-left">Rawat Inap VIP</span>
-                </div>
-            </a>
-
-            <!-- OK / IBS (Gunting Bedah) -->
-            <a href="https://tinyurl.com/indikatormutuibs" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left">OK / IBS</span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-left">Instalasi Bedah Sentral</span>
-                </div>
-            </a>
-
-            <!-- ICU -->
-            <a href="https://tinyurl.com/indikatormutuicurs" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left">ICU</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left">INTENSIVE CARE UNIT</span>
-                </div>
-            </a>
-
-            <!-- PICU (Anak) -->
-            <a href="https://tinyurl.com/indikatormutupicurs" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M9 18h6"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left">PICU</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left">Pediatric Intensive Care Unit</span>
-                </div>
-            </a>
-
-            <!-- NICU (Bayi) -->
-            <a href="https://tinyurl.com/indikatormutunicurs" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><circle cx="9" cy="9" r="0.5"/><circle cx="15" cy="9" r="0.5"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left text-left">NICU</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left text-left">Neonatal Intensive Care Unit</span>
-                </div>
-            </a>
-
-            <!-- IGD -->
-            <a href="https://tinyurl.com/indikatormutuigdrs" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left">IGD</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left">INSTALASI GAWAT DARURAT</span>
-                </div>
-            </a>
-
-            <!-- PONEK (Ibu Hamil) -->
-            <a href="https://tinyurl.com/indikatormutuponek" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M11 12a5 5 0 0 1 5 5v4H8v-4a5 5 0 0 1 3-5Z"/><path d="M14 17a3 3 0 1 1-6 0"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left">PONEK</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left">Pelayanan Obstetri Neonatal Emergensi Komprehensif</span>
-                </div>
-            </a>
-
-            <!-- HEMODIALISA (Blood circulation drop) -->
-            <a href="https://tinyurl.com/indikatormutuhdrs" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5M12 22a7 7 0 0 1-7-7c0-2 1-3.9 3-5.5s3.5-4 4-6.5"/><path d="M12 2s4 4 4 7-1.79 5-4 5-4-2.24-4-5 4-7 4-7z"/><path d="M16 14a4 4 0 0 1-8 0"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left">HEMODIALISA</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left">Cuci Darah</span>
-                </div>
-            </a>
-
-            <!-- POLIKLINIK (Dokter) -->
-            <a href="https://tinyurl.com/indikatormutupoli" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left">POLIKLINIK</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left">INSTALASI RAWAT JALAN</span>
-                </div>
-            </a>
-
-            <!-- FARMASI (Kapsul) -->
-            <a href="https://tinyurl.com/indikatormutufarmasirs" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left text-left">FARMASI</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left text-left">Instalasi Farmasi</span>
-                </div>
-            </a>
-
-            <!-- GIZI (Gelas Berasap) -->
-            <a href="https://tinyurl.com/indikatormutugizirs" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8z"/><path d="M6 2v2M10 2v2M14 2v2"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left text-left">GIZI</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left text-left">Instalasi Gizi</span>
-                </div>
-            </a>
-
-            <!-- RADIOLOGI (Radiasi) -->
-            <a href="https://tinyurl.com/indikatormuturad" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 12l-6.5-7.5"/><path d="M12 12l9.5 -2.5"/><path d="M12 12l-3 9.5"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left text-left">RADIOLOGI</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left text-left">Pencitraan Medis</span>
-                </div>
-            </a>
-
-            <!-- LABORATORIUM (Flask) -->
-            <a href="https://tinyurl.com/indikatormutulab" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.527a6 6 0 1 0 4 0V2"/><path d="M8.5 2h7"/><path d="M10 13h4"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left text-left text-left">LABORATORIUM</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left text-left text-left text-left">Penunjang Medis</span>
-                </div>
-            </a>
-
-            <!-- REKAM MEDIK (Clipboard) -->
-            <a href="https://tinyurl.com/indikatormuturm" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left text-left text-left">REKAM MEDIK</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left text-left text-left text-left">Manajemen Data</span>
-                </div>
-            </a>
-
-            <a href="https://tinyurl.com/indikatormutucssd" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left text-left text-left">CSSD</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left text-left text-left text-left">Sterilisasi Pusat</span>
-                </div>
-            </a>
-
-            <!-- BANK DARAH (Tetesan Darah Profesional) -->
-            <a href="https://tinyurl.com/indikatormutubdrs" target="_blank" class="unit-card group">
-                <div class="unit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.5 4a7 7 0 1 1-7 0L12 2z"/></svg></div>
-                <div class="flex-grow text-left">
-                    <span class="text-white font-bold block unit-name-text text-base tracking-tight text-left text-left text-left">BANK DARAH</span>
-                    <span class="text-[10px] text-slate-500 uppercase font-bold text-left text-left text-left text-left text-left">Layanan Darah</span>
-                </div>
-            </a>
-
-        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 px-2" id="mutuUnitGrid"></div>
 
         <div id="mutuEmptyState" class="hidden text-center py-20 text-slate-500 text-sm italic">
             Unit pelayanan tidak ditemukan...
         </div>
     </main>
 
-    <!-- SLOGAN SECTION -->
     <div class="mt-auto pt-16 pb-8 text-center px-6">
         <h4 class="serif-font text-2xl md:text-3xl font-bold text-white italic mb-2">Setulus Hati Kami Melayani</h4>
         <div class="w-16 h-1 bg-blue-600 mx-auto rounded-full opacity-60"></div>
     </div>
 
-    <!-- 6. GLOBAL FOOTER -->
     <footer class="bg-slate-950/60 border-t border-white/5 py-10 px-6 text-center backdrop-blur-lg">
         <div class="max-w-[1200px] mx-auto text-center">
             <p class="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500 mb-2 text-center">Tim Teknologi Informasi</p>
             <p class="text-sm font-bold text-white uppercase tracking-widest mb-6 text-center">RSUD Lebong © 2026</p>
-            <div class="text-[8px] font-bold text-slate-600 uppercase tracking-widest text-center text-center">Integrated Health Services • V1.0.0</div>
+            <div class="text-[8px] font-bold text-slate-600 uppercase tracking-widest text-center">Integrated Health Services • V1.0.0</div>
         </div>
     </footer>
 
-    <!-- 7. CORE JAVASCRIPT -->
     <script>
+        // Data Unit sesuai ikon asli Anda
+        const MUTU_UNITS = [
+            // RAWAT INAP (Ikon Bed)
+            { name: "AGLONEMA", cat: "RANAP", sub: "Rawat Inap Penyakit Dalam", link: "https://tinyurl.com/indikatormutuaglonema", type: "bed" },
+            { name: "ALAMANDA", cat: "RANAP", sub: "Rawat Inap Kebidanan", link: "https://tinyurl.com/indikatormutualamanda", type: "bed" },
+            { name: "ASTER", cat: "RANAP", sub: "Rawat Inap Anak", link: "https://tinyurl.com/indikatormutuasterr", type: "bed" },
+            { name: "ANGGREK", cat: "RANAP", sub: "Rawat Inap Bedah", link: "https://tinyurl.com/indikatormutuanggrekk", type: "bed" },
+            { name: "AZALEA", cat: "RANAP", sub: "Rawat Inap VIP", link: "https://tinyurl.com/indikatormutuazalea", type: "bed" },
+            
+            // PELAYANAN KHUSUS (Ikon Variasi)
+            { name: "OK / IBS", cat: "KHUSUS", sub: "Instalasi Bedah Sentral", link: "https://tinyurl.com/indikatormutuibs", type: "scissors" },
+            { name: "ICU", cat: "KHUSUS", sub: "INTENSIVE CARE UNIT", link: "https://tinyurl.com/indikatormutuicurs", type: "pulse" },
+            { name: "PICU", cat: "KHUSUS", sub: "Pediatric Intensive Care Unit", link: "https://tinyurl.com/indikatormutupicurs", type: "child" },
+            { name: "NICU", cat: "KHUSUS", sub: "Neonatal Intensive Care Unit", link: "https://tinyurl.com/indikatormutunicurs", type: "baby" },
+            { name: "IGD", cat: "KHUSUS", sub: "INSTALASI GAWAT DARURAT", link: "https://tinyurl.com/indikatormutuigdrs", type: "plus" },
+            { name: "PONEK", cat: "KHUSUS", sub: "PONEK 24 Jam", link: "https://tinyurl.com/indikatormutuponek", type: "pregnant" },
+            { name: "HEMODIALISA", cat: "KHUSUS", sub: "Cuci Darah", link: "https://tinyurl.com/indikatormutuhdrs", type: "blood" },
+
+            // PENUNJANG (Ikon Variasi)
+            { name: "POLIKLINIK", cat: "PENUNJANG", sub: "INSTALASI RAWAT JALAN", link: "https://tinyurl.com/indikatormutupoli", type: "doctor" },
+            { name: "FARMASI", cat: "PENUNJANG", sub: "Instalasi Farmasi", link: "https://tinyurl.com/indikatormutufarmasirs", type: "pill" },
+            { name: "GIZI", cat: "PENUNJANG", sub: "Instalasi Gizi", link: "https://tinyurl.com/indikatormutugizirs", type: "steam" },
+            { name: "RADIOLOGI", cat: "PENUNJANG", sub: "Pencitraan Medis", link: "https://tinyurl.com/indikatormuturad", type: "radiation" },
+            { name: "LABORATORIUM", cat: "PENUNJANG", sub: "Penunjang Medis", link: "https://tinyurl.com/indikatormutulab", type: "flask" },
+            { name: "REKAM MEDIK", cat: "PENUNJANG", sub: "Manajemen Data", link: "https://tinyurl.com/indikatormuturm", type: "clipboard" },
+            { name: "CSSD", cat: "PENUNJANG", sub: "Sterilisasi Pusat", link: "https://tinyurl.com/indikatormutucssd", type: "cycle" },
+            { name: "BANK DARAH", cat: "PENUNJANG", sub: "Layanan Darah", link: "https://tinyurl.com/indikatormutubdrs", type: "drop" }
+        ];
+
+        // Objek Ikon Persis sesuai Kode Awal Anda
+        const ICONS = {
+            bed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9"/></svg>`,
+            scissors: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>`,
+            pulse: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>`,
+            child: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M9 18h6"/></svg>`,
+            baby: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><circle cx="9" cy="9" r="0.5"/><circle cx="15" cy="9" r="0.5"/></svg>`,
+            plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>`,
+            pregnant: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M11 12a5 5 0 0 1 5 5v4H8v-4a5 5 0 0 1 3-5Z"/><path d="M14 17a3 3 0 1 1-6 0"/></svg>`,
+            blood: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5M12 22a7 7 0 0 1-7-7c0-2 1-3.9 3-5.5s3.5-4 4-6.5"/><path d="M12 2s4 4 4 7-1.79 5-4 5-4-2.24-4-5 4-7 4-7z"/><path d="M16 14a4 4 0 0 1-8 0"/></svg>`,
+            doctor: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+            pill: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>`,
+            steam: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8z"/><path d="M6 2v2M10 2v2M14 2v2"/></svg>`,
+            radiation: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 12l-6.5-7.5"/><path d="M12 12l9.5 -2.5"/><path d="M12 12l-3 9.5"/></svg>`,
+            flask: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.527a6 6 0 1 0 4 0V2"/><path d="M8.5 2h7"/><path d="M10 13h4"/></svg>`,
+            clipboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/></svg>`,
+            cycle: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>`,
+            drop: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.5 4a7 7 0 1 1-7 0L12 2z"/></svg>`
+        };
+
         window.UIManager = {
-            currentView: 'HOME',
+            activeCategory: 'ALL',
             
             showView: (view) => {
                 const views = { HOME: 'mainDashboard', PMKP_MENU: 'pmkpMenuView', MUTU_LIST: 'mutuListView' };
@@ -459,10 +347,10 @@
                 const target = document.getElementById(views[view]);
                 if(target) target.classList.remove('hidden');
                 
-                window.UIManager.currentView = view;
                 window.scrollTo({ top: 0, behavior: 'smooth' });
                 
                 if (view === 'PMKP_MENU') window.UIManager.renderPMKPGrid();
+                if (view === 'MUTU_LIST') window.UIManager.renderMutuGrid();
             },
 
             renderPMKPGrid: () => {
@@ -472,7 +360,7 @@
                     { title: 'SIMMUTU', desc: 'Sistem Informasi Manajemen Mutu internal rumah sakit.', link: 'http://172.31.1.2/simmutu', type: 'Sistem Internal' },
                     { title: 'Survey SKM', desc: 'Survey Kepuasan Masyarakat digital berkelanjutan.', link: 'https://rsudlebong.fillout.com/skm', type: 'Survey' },
                     { title: 'Pengaduan', desc: 'Saluran resmi penyampaian aspirasi layanan.', link: 'https://rsudlebong.fillout.com/pengaduan', type: 'Form' },
-                    { title: 'Survey Budaya', desc: 'Budaya keselamatan pasien internal RS.', link: 'https://rsudlebong.fillout.com//surveibudaya', type: 'Survey' }
+                    { title: 'Survey Budaya', desc: 'Budaya keselamatan pasien internal RS.', link: 'https://rsudlebong.fillout.com/surveibudaya', type: 'Survey' }
                 ];
                 
                 grid.innerHTML = items.map(i => `
@@ -486,22 +374,50 @@
                     </div>`).join('');
             },
 
+            renderMutuGrid: () => {
+                const grid = document.getElementById('mutuUnitGrid');
+                grid.innerHTML = MUTU_UNITS.map(u => `
+                    <a href="${u.link}" target="_blank" data-cat="${u.cat}" class="unit-card group">
+                        <div class="unit-icon">${ICONS[u.type]}</div>
+                        <div class="flex-grow text-left">
+                            <span class="text-white font-bold block unit-name-text text-base tracking-tight uppercase">${u.name}</span>
+                            <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-left">${u.sub}</span>
+                        </div>
+                    </a>
+                `).join('');
+                this.UIManager.filterMutuUnits();
+            },
+
+            setCategory: (cat) => {
+                this.UIManager.activeCategory = cat;
+                document.querySelectorAll('.category-tab').forEach(t => t.classList.remove('active'));
+                document.getElementById('cat-' + cat).classList.add('active');
+                this.UIManager.filterMutuUnits();
+            },
+
             filterMutuUnits: () => {
-                const input = document.getElementById("mutuSearchInput").value.toLowerCase();
+                const search = document.getElementById("mutuSearchInput").value.toLowerCase();
+                const cat = this.UIManager.activeCategory;
                 const cards = document.querySelectorAll("#mutuUnitGrid .unit-card");
                 const emptyState = document.getElementById("mutuEmptyState");
-                let hasResults = false;
+                let count = 0;
 
                 cards.forEach(card => {
-                    const unitName = card.querySelector(".unit-name-text").innerText.toLowerCase();
-                    if (unitName.includes(input)) {
+                    const name = card.querySelector(".unit-name-text").innerText.toLowerCase();
+                    const sub = card.querySelector("span:last-child").innerText.toLowerCase();
+                    const cardCat = card.getAttribute('data-cat');
+                    
+                    const matchSearch = name.includes(search) || sub.includes(search);
+                    const matchCat = (cat === 'ALL' || cardCat === cat);
+
+                    if (matchSearch && matchCat) {
                         card.style.display = "flex";
-                        hasResults = true;
+                        count++;
                     } else {
                         card.style.display = "none";
                     }
                 });
-                emptyState.classList.toggle('hidden', hasResults);
+                emptyState.classList.toggle('hidden', count > 0);
             }
         };
 
